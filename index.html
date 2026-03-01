@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <title>Sports Scoreboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body, #root { width: 100%; height: 100%; overflow: hidden; background: #0a0a0a; }
+    /* Prevent iOS text size inflation */
+    body { -webkit-text-size-adjust: 100%; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- React + Babel loaded from CDN — no build step needed -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Our app — loaded as JSX, Babel compiles it in-browser -->
+  <script type="text/babel" src="/app.jsx" data-presets="react"></script>
+</body>
+</html>
