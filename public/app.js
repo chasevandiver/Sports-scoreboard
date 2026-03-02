@@ -825,6 +825,169 @@ function ScrollRow({ rowH, speed, games, slot, flashIds, favs, onLoop, onSwipe, 
 }
 
 // ═══════════════════════════════════════════════════════════════════
+//  SCORES VIEW — static ESPN-style scoreboard
+// ═══════════════════════════════════════════════════════════════════
+
+function ScoreRow({ game, favs, onTap }) {
+  const pick    = game.pick || null;
+  const isLive  = game.status === "live";
+  const isFinal = game.status === "final";
+  const isPre   = game.status === "pre";
+  const hw = !isPre && (game.home.score||0) > (game.away.score||0);
+  const aw = !isPre && (game.away.score||0) > (game.home.score||0);
+  const isFav   = favs.has(game.home.abbr) || favs.has(game.away.abbr);
+
+  // Pick result
+  let pickResult = null;
+  if (pick && isFinal) {
+    const won = (pick.pick_abbr===game.home.abbr && hw) || (pick.pick_abbr===game.away.abbr && aw);
+    pickResult = won ? "✅" : "❌";
+  }
+
+  const teamLine = (side) => {
+    const t   = game[side];
+    const win = side==="home" ? hw : aw;
+    const isTf = favs.has(t.abbr);
+    return e("div",{style:{display:"flex",alignItems:"center",gap:8,height:34}},
+      t.logo
+        ? e("img",{src:t.logo,width:22,height:22,style:{objectFit:"contain",flexShrink:0,filter:"drop-shadow(0 1px 3px rgba(0,0,0,0.8))"}})
+        : e("div",{style:{width:22,height:22,borderRadius:4,flexShrink:0,background:t.color+"33"}}),
+      e("div",{style:{flex:1,display:"flex",alignItems:"baseline",gap:5,minWidth:0,overflow:"hidden"}},
+        isTf && e("span",{style:{fontSize:10,flexShrink:0}},"⭐"),
+        t.rank && e("span",{style:{fontSize:10,fontWeight:900,fontFamily:F,color:"#F5C518",flexShrink:0}},"#"+t.rank),
+        e("span",{style:{
+          fontSize:14,fontWeight:900,fontFamily:F,letterSpacing:0.3,
+          color: isFinal&&!win ? "rgba(255,255,255,0.35)" : "#fff",
+          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+        }}, t.abbr),
+        isPre && t.record && e("span",{style:{fontSize:11,color:"rgba(255,255,255,0.25)",fontFamily:F,flexShrink:0}},t.record),
+      ),
+      !isPre && e("span",{style:{
+        fontSize:16,fontWeight:900,fontFamily:F,fontVariantNumeric:"tabular-nums",
+        color: isFinal&&!win ? "rgba(255,255,255,0.3)" : "#fff",
+        minWidth:26,textAlign:"right",
+        textShadow: win&&isLive ? "0 0 12px "+t.color+"aa" : "none",
+      }}, t.score),
+    );
+  };
+
+  return e("div",{
+    onClick: onTap,
+    style:{
+      display:"flex", alignItems:"center", gap:0,
+      padding:"6px 12px",
+      borderBottom:"1px solid rgba(255,255,255,0.05)",
+      background: isFav
+        ? "linear-gradient(90deg,rgba(245,197,24,0.06),transparent 60%)"
+        : "transparent",
+      cursor:"pointer",
+    },
+  },
+    // Left: team lines
+    e("div",{style:{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:0}},
+      teamLine("away"),
+      e("div",{style:{height:1,background:"rgba(255,255,255,0.04)",margin:"0 0 0 30px"}}),
+      teamLine("home"),
+    ),
+
+    // Right: status + pick
+    e("div",{style:{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3,paddingLeft:8,minWidth:80}},
+      // Status
+      e("div",{style:{display:"flex",alignItems:"center",gap:4}},
+        isLive && e("div",{className:"live-dot",style:{width:6,height:6,borderRadius:"50%",background:"#FF3B30",boxShadow:"0 0 5px #FF3B30"}}),
+        e("span",{style:{
+          fontSize:11,fontWeight:900,fontFamily:F,letterSpacing:0.5,
+          color: isLive?"#FF3B30" : isFinal?"rgba(255,255,255,0.3)" : "rgba(255,255,255,0.45)",
+        }}, game.period),
+        isLive && game.clock && e("span",{style:{fontSize:11,fontFamily:F,color:"rgba(255,255,255,0.6)"}},game.clock),
+      ),
+      // Pick badge
+      pick && e("div",{style:{display:"flex",alignItems:"center",gap:3}},
+        e("span",{style:{fontSize:10}}, pickResult || "🧠"),
+        e("span",{style:{
+          fontSize:11,fontWeight:900,fontFamily:F,
+          color: pickResult==="✅"?"#30D158" : pickResult==="❌"?"#FF453A" : "#7EB8F7",
+        }}, pick.pick_abbr),
+        e("span",{style:{fontSize:10,color:"rgba(255,255,255,0.3)",fontFamily:F}},
+          Math.round(pick.confidence)+"%"),
+      ),
+      // Channel
+      game.channel && e("span",{style:{fontSize:10,color:"rgba(255,255,255,0.22)",fontFamily:F}},game.channel),
+    ),
+  );
+}
+
+function ScoresView({ slots, favs, flashIds, onTapGame }) {
+  // Group all CBB slots under one "College Basketball" section header
+  // but keep each conference as a sub-group
+  const sections = [];
+  let cbbSection = null;
+
+  slots.forEach(sl => {
+    if (sl.isCBB) {
+      if (!cbbSection) {
+        cbbSection = { key:"cbb_all", label:"College Basketball", icon:"🏀", accent:"#1A4A8A", groups:[] };
+        sections.push(cbbSection);
+      }
+      cbbSection.groups.push({ label: sl.shortLabel, games: sl.games, slot: sl });
+    } else {
+      sections.push({ key:sl.key, label:sl.label, icon:sl.icon, accent:sl.accent, groups:[{ label:null, games:sl.games, slot:sl }] });
+    }
+  });
+
+  return e("div",{style:{
+    flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch",
+    background:"#0a0a0a",
+  }},
+    sections.length===0 && e("div",{style:{
+      display:"flex",alignItems:"center",justifyContent:"center",
+      height:200,color:"rgba(255,255,255,0.1)",fontSize:14,fontFamily:F,letterSpacing:3,
+    }},"LOADING…"),
+
+    sections.map(sec => e("div",{key:sec.key},
+      // Section header
+      e("div",{style:{
+        display:"flex",alignItems:"center",gap:8,
+        padding:"10px 12px 6px",
+        background:"linear-gradient(90deg,"+sec.accent+"22,transparent)",
+        borderLeft:"3px solid "+sec.accent,
+        borderBottom:"1px solid rgba(255,255,255,0.06)",
+        position:"sticky",top:0,zIndex:10,
+        backdropFilter:"blur(8px)",
+        WebkitBackdropFilter:"blur(8px)",
+        background:"linear-gradient(90deg,"+sec.accent+"33 0%,rgba(10,10,10,0.95) 60%)",
+      }},
+        e("span",{style:{fontSize:16}},sec.icon),
+        e("span",{style:{fontSize:15,fontWeight:900,fontFamily:F,color:"#fff",letterSpacing:1}},sec.label),
+        e("span",{style:{fontSize:11,color:"rgba(255,255,255,0.3)",fontFamily:F}},
+          sec.groups.reduce((n,g)=>n+g.games.length,0)+" games"),
+      ),
+
+      // Groups (conferences for CBB, single group for others)
+      sec.groups.map((grp,gi) => e("div",{key:gi},
+        // Conference sub-header for CBB
+        grp.label && e("div",{style:{
+          padding:"5px 12px 4px",
+          background:"rgba(255,255,255,0.025)",
+          borderBottom:"1px solid rgba(255,255,255,0.04)",
+        }},
+          e("span",{style:{fontSize:11,fontWeight:900,fontFamily:F,color:"rgba(255,255,255,0.4)",letterSpacing:1}},
+            grp.label.toUpperCase()+" · "+grp.games.length),
+        ),
+        // Game rows
+        grp.games.map(g => e(ScoreRow,{
+          key:g.id, game:g, favs,
+          onTap:()=>onTapGame(g, grp.slot),
+        })),
+      )),
+    )),
+
+    // Bottom padding so last item isn't hidden behind anything
+    e("div",{style:{height:20}}),
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  FAVORITES PANEL
 // ═══════════════════════════════════════════════════════════════════
 function FavPanel({ slots, favs, onToggle, onClose }) {
@@ -1010,7 +1173,10 @@ function SportsBoard() {
   const [r2,          setR2]          = useState(1);
   const [pinnedGame,  setPinnedGame]  = useState(null);
   const [showFavs,    setShowFavs]    = useState(false);
-  const [picks,       setPicks]       = useState({});  // game_id → pick
+  const [picks,       setPicks]       = useState({});
+  const [viewMode,    setViewMode]    = useState(() => {
+    try { return localStorage.getItem("sb_view") || "ticker"; } catch { return "ticker"; }
+  });
   const [favs,        setFavs]        = useState(() => {
     try {
       const saved = localStorage.getItem("sb_favs");
@@ -1023,6 +1189,14 @@ function SportsBoard() {
       const next = new Set(prev);
       next.has(abbr) ? next.delete(abbr) : next.add(abbr);
       try { localStorage.setItem("sb_favs", JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }, []);
+
+  const toggleView = useCallback(() => {
+    setViewMode(prev => {
+      const next = prev === "ticker" ? "scores" : "ticker";
+      try { localStorage.setItem("sb_view", next); } catch {}
       return next;
     });
   }, []);
@@ -1213,7 +1387,22 @@ function SportsBoard() {
           }),
           loading&&e("div",{className:"spin",style:spin}),
         ),
-        e("div",{style:{display:"flex",alignItems:"center",gap:8,flexShrink:0}},
+        e("div",{style:{display:"flex",alignItems:"center",gap:6,flexShrink:0}},
+          // View mode toggle
+          e("button",{
+            onClick: toggleView,
+            title: viewMode==="ticker" ? "Switch to Scores view" : "Switch to Ticker view",
+            style:{
+              background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.12)",
+              borderRadius:7, cursor:"pointer", padding:"3px 8px",
+              fontSize:13, lineHeight:1, display:"flex", alignItems:"center", gap:4,
+              color:"rgba(255,255,255,0.7)",
+            },
+          },
+            e("span",null, viewMode==="ticker" ? "⊞" : "▶▶"),
+            e("span",{style:{fontSize:10,fontWeight:900,fontFamily:F,letterSpacing:0.5}},
+              viewMode==="ticker" ? "SCORES" : "TICKER"),
+          ),
           e("button",{
             onClick:()=>setShowFavs(true),
             style:{
@@ -1230,8 +1419,12 @@ function SportsBoard() {
           e("span",{style:{fontSize:20,fontWeight:900,color:"rgba(255,255,255,0.78)",fontFamily:F}},clock.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})),
         ),
       ),
-      renderRow(slot1,1,SPEED_ROW1),
-      renderRow(slot2,2,SPEED_ROW2),
+      viewMode === "ticker"
+        ? e(Fragment, null,
+            renderRow(slot1,1,SPEED_ROW1),
+            renderRow(slot2,2,SPEED_ROW2),
+          )
+        : e(ScoresView, { slots, favs, flashIds, onTapGame:(g,sl)=>setPinnedGame({game:g,sport:sl.sport,league:sl.league}) }),
     ),
   );
 }
