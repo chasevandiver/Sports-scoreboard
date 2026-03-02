@@ -836,6 +836,7 @@ function ScoreRow({ game, favs, onTap }) {
   const hw = !isPre && (game.home.score||0) > (game.away.score||0);
   const aw = !isPre && (game.away.score||0) > (game.home.score||0);
   const isFav   = favs.has(game.home.abbr) || favs.has(game.away.abbr);
+  const covered = getCover(game);
 
   // Pick result
   let pickResult = null;
@@ -848,25 +849,28 @@ function ScoreRow({ game, favs, onTap }) {
     const t   = game[side];
     const win = side==="home" ? hw : aw;
     const isTf = favs.has(t.abbr);
-    return e("div",{style:{display:"flex",alignItems:"center",gap:8,height:34}},
+    return e("div",{style:{display:"flex",alignItems:"center",gap:10,padding:"5px 0"}},
+      // Logo
       t.logo
-        ? e("img",{src:t.logo,width:22,height:22,style:{objectFit:"contain",flexShrink:0,filter:"drop-shadow(0 1px 3px rgba(0,0,0,0.8))"}})
-        : e("div",{style:{width:22,height:22,borderRadius:4,flexShrink:0,background:t.color+"33"}}),
-      e("div",{style:{flex:1,display:"flex",alignItems:"baseline",gap:5,minWidth:0,overflow:"hidden"}},
-        isTf && e("span",{style:{fontSize:10,flexShrink:0}},"⭐"),
-        t.rank && e("span",{style:{fontSize:10,fontWeight:900,fontFamily:F,color:"#F5C518",flexShrink:0}},"#"+t.rank),
+        ? e("img",{src:t.logo,width:30,height:30,style:{objectFit:"contain",flexShrink:0,filter:"drop-shadow(0 1px 4px rgba(0,0,0,0.9))"}})
+        : e("div",{style:{width:30,height:30,borderRadius:5,flexShrink:0,background:t.color+"33"}}),
+      // Name + record
+      e("div",{style:{flex:1,minWidth:0,display:"flex",alignItems:"baseline",gap:5,overflow:"hidden"}},
+        isTf && e("span",{style:{fontSize:12,flexShrink:0}},"⭐"),
+        t.rank && e("span",{style:{fontSize:12,fontWeight:900,fontFamily:F,color:"#F5C518",flexShrink:0}},"#"+t.rank),
         e("span",{style:{
-          fontSize:14,fontWeight:900,fontFamily:F,letterSpacing:0.3,
-          color: isFinal&&!win ? "rgba(255,255,255,0.35)" : "#fff",
+          fontSize:17,fontWeight:900,fontFamily:F,letterSpacing:0.3,
+          color: isFinal&&!win ? "rgba(255,255,255,0.3)" : "#fff",
           overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
         }}, t.abbr),
-        isPre && t.record && e("span",{style:{fontSize:11,color:"rgba(255,255,255,0.25)",fontFamily:F,flexShrink:0}},t.record),
+        isPre && t.record && e("span",{style:{fontSize:12,color:"rgba(255,255,255,0.28)",fontFamily:F,flexShrink:0}},t.record),
       ),
+      // Score
       !isPre && e("span",{style:{
-        fontSize:16,fontWeight:900,fontFamily:F,fontVariantNumeric:"tabular-nums",
-        color: isFinal&&!win ? "rgba(255,255,255,0.3)" : "#fff",
-        minWidth:26,textAlign:"right",
-        textShadow: win&&isLive ? "0 0 12px "+t.color+"aa" : "none",
+        fontSize:22,fontWeight:900,fontFamily:F,fontVariantNumeric:"tabular-nums",flexShrink:0,
+        color: isFinal&&!win ? "rgba(255,255,255,0.25)" : "#fff",
+        textShadow: win&&isLive ? "0 0 14px "+t.color+"cc" : "none",
+        minWidth:30,textAlign:"right",
       }}, t.score),
     );
   };
@@ -874,52 +878,80 @@ function ScoreRow({ game, favs, onTap }) {
   return e("div",{
     onClick: onTap,
     style:{
-      display:"flex", alignItems:"center", gap:0,
-      padding:"6px 12px",
-      borderBottom:"1px solid rgba(255,255,255,0.05)",
+      borderRadius:10,
+      border:"1px solid rgba(255,255,255,0.07)",
       background: isFav
-        ? "linear-gradient(90deg,rgba(245,197,24,0.06),transparent 60%)"
-        : "transparent",
+        ? "linear-gradient(135deg,rgba(245,197,24,0.07),rgba(20,20,20,0.95))"
+        : "linear-gradient(135deg,rgba(255,255,255,0.03),rgba(15,15,15,0.98))",
       cursor:"pointer",
+      overflow:"hidden",
+      position:"relative",
     },
   },
-    // Left: team lines
-    e("div",{style:{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:0}},
-      teamLine("away"),
-      e("div",{style:{height:1,background:"rgba(255,255,255,0.04)",margin:"0 0 0 30px"}}),
-      teamLine("home"),
-    ),
+    // Top color bar
+    e("div",{style:{height:3,background:"linear-gradient(90deg,"+game.away.color+","+game.home.color+")",opacity:0.8}}),
 
-    // Right: status + pick
-    e("div",{style:{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3,paddingLeft:8,minWidth:80}},
-      // Status
-      e("div",{style:{display:"flex",alignItems:"center",gap:4}},
-        isLive && e("div",{className:"live-dot",style:{width:6,height:6,borderRadius:"50%",background:"#FF3B30",boxShadow:"0 0 5px #FF3B30"}}),
-        e("span",{style:{
-          fontSize:11,fontWeight:900,fontFamily:F,letterSpacing:0.5,
-          color: isLive?"#FF3B30" : isFinal?"rgba(255,255,255,0.3)" : "rgba(255,255,255,0.45)",
-        }}, game.period),
-        isLive && game.clock && e("span",{style:{fontSize:11,fontFamily:F,color:"rgba(255,255,255,0.6)"}},game.clock),
+    e("div",{style:{padding:"8px 12px 10px"}},
+      // Status row
+      e("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}},
+        e("div",{style:{display:"flex",alignItems:"center",gap:5}},
+          isLive && e("div",{className:"live-dot",style:{width:7,height:7,borderRadius:"50%",background:"#FF3B30",boxShadow:"0 0 6px #FF3B30",flexShrink:0}}),
+          e("span",{style:{
+            fontSize:12,fontWeight:900,fontFamily:F,letterSpacing:0.8,
+            color: isLive?"#FF3B30" : isFinal?"rgba(255,255,255,0.35)" : "rgba(255,255,255,0.55)",
+          }}, game.period),
+          isLive && game.clock && e("span",{style:{fontSize:12,fontFamily:F,color:"rgba(255,255,255,0.6)",marginLeft:2}},game.clock),
+        ),
+        game.channel && e("span",{style:{fontSize:11,color:"rgba(255,255,255,0.25)",fontFamily:F}},"📺 "+game.channel),
       ),
-      // Pick badge
-      pick && e("div",{style:{display:"flex",alignItems:"center",gap:3}},
-        e("span",{style:{fontSize:10}}, pickResult || "🧠"),
-        e("span",{style:{
-          fontSize:11,fontWeight:900,fontFamily:F,
-          color: pickResult==="✅"?"#30D158" : pickResult==="❌"?"#FF453A" : "#7EB8F7",
-        }}, pick.pick_abbr),
-        e("span",{style:{fontSize:10,color:"rgba(255,255,255,0.3)",fontFamily:F}},
-          Math.round(pick.confidence)+"%"),
+
+      // Team lines
+      teamLine("away"),
+      e("div",{style:{height:1,background:"rgba(255,255,255,0.06)",margin:"1px 0 1px 40px"}}),
+      teamLine("home"),
+
+      // Bottom row: spread + pick
+      e("div",{style:{
+        display:"flex",alignItems:"center",justifyContent:"space-between",
+        marginTop:7,paddingTop:7,
+        borderTop:"1px solid rgba(255,255,255,0.06)",
+        gap:8,flexWrap:"wrap",
+      }},
+        // Spread
+        game.spread
+          ? e("div",{style:{display:"flex",alignItems:"center",gap:5}},
+              e("span",{style:{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",fontFamily:F,letterSpacing:0.5}},"SPR"),
+              e("span",{style:{fontSize:13,fontWeight:900,fontFamily:F,color:"rgba(255,255,255,0.7)"}},
+                game.spread.favorite+" "+(game.spread.line>0?"+":"")+game.spread.line),
+              covered!==null && e("span",{style:{fontSize:12,fontWeight:900,color:covered?"#30D158":"#FF453A"}},
+                covered?"✓":"✗"),
+            )
+          : e("span",{style:{fontSize:11,color:"rgba(255,255,255,0.15)",fontFamily:F}},isPre?"":"—"),
+
+        // Pick badge
+        pick
+          ? e("div",{style:{display:"flex",alignItems:"center",gap:4}},
+              e("span",{style:{fontSize:12}}, pickResult || "🧠"),
+              e("span",{style:{
+                fontSize:13,fontWeight:900,fontFamily:F,letterSpacing:0.5,
+                color: pickResult==="✅"?"#30D158" : pickResult==="❌"?"#FF453A" : "#7EB8F7",
+              }}, pick.pick_abbr),
+              e("span",{style:{fontSize:11,color:"rgba(255,255,255,0.35)",fontFamily:F}},
+                Math.round(pick.confidence)+"%"),
+              pick.model_vs_market && Math.abs(pick.model_vs_market.spread_edge)>=2 &&
+                e("span",{style:{
+                  fontSize:11,fontWeight:900,fontFamily:F,
+                  color:pick.model_vs_market.spread_edge>0?"#30D158":"#FF453A",
+                  marginLeft:2,
+                }}, (pick.model_vs_market.spread_edge>0?"+":"")+pick.model_vs_market.spread_edge.toFixed(1)),
+            )
+          : null,
       ),
-      // Channel
-      game.channel && e("span",{style:{fontSize:10,color:"rgba(255,255,255,0.22)",fontFamily:F}},game.channel),
     ),
   );
 }
 
 function ScoresView({ slots, favs, flashIds, onTapGame }) {
-  // Group all CBB slots under one "College Basketball" section header
-  // but keep each conference as a sub-group
   const sections = [];
   let cbbSection = null;
 
@@ -937,53 +969,59 @@ function ScoresView({ slots, favs, flashIds, onTapGame }) {
 
   return e("div",{style:{
     flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch",
-    background:"#0a0a0a",
+    background:"#0a0a0a", padding:"0 0 24px",
   }},
     sections.length===0 && e("div",{style:{
       display:"flex",alignItems:"center",justifyContent:"center",
-      height:200,color:"rgba(255,255,255,0.1)",fontSize:14,fontFamily:F,letterSpacing:3,
+      height:200,color:"rgba(255,255,255,0.1)",fontSize:16,fontFamily:F,letterSpacing:3,
     }},"LOADING…"),
 
     sections.map(sec => e("div",{key:sec.key},
-      // Section header
+
+      // Section header — sticky
       e("div",{style:{
-        display:"flex",alignItems:"center",gap:8,
-        padding:"10px 12px 6px",
-        background:"linear-gradient(90deg,"+sec.accent+"22,transparent)",
-        borderLeft:"3px solid "+sec.accent,
-        borderBottom:"1px solid rgba(255,255,255,0.06)",
+        display:"flex",alignItems:"center",gap:10,
+        padding:"12px 14px 8px",
         position:"sticky",top:0,zIndex:10,
-        backdropFilter:"blur(8px)",
-        WebkitBackdropFilter:"blur(8px)",
-        background:"linear-gradient(90deg,"+sec.accent+"33 0%,rgba(10,10,10,0.95) 60%)",
+        backdropFilter:"blur(10px)",
+        WebkitBackdropFilter:"blur(10px)",
+        background:"linear-gradient(90deg,"+sec.accent+"44 0%,rgba(10,10,10,0.96) 55%)",
+        borderLeft:"4px solid "+sec.accent,
+        borderBottom:"1px solid rgba(255,255,255,0.07)",
       }},
-        e("span",{style:{fontSize:16}},sec.icon),
-        e("span",{style:{fontSize:15,fontWeight:900,fontFamily:F,color:"#fff",letterSpacing:1}},sec.label),
-        e("span",{style:{fontSize:11,color:"rgba(255,255,255,0.3)",fontFamily:F}},
+        e("span",{style:{fontSize:20}},sec.icon),
+        e("span",{style:{fontSize:18,fontWeight:900,fontFamily:F,color:"#fff",letterSpacing:1}},sec.label),
+        e("span",{style:{fontSize:12,color:"rgba(255,255,255,0.35)",fontFamily:F,marginLeft:2}},
           sec.groups.reduce((n,g)=>n+g.games.length,0)+" games"),
       ),
 
-      // Groups (conferences for CBB, single group for others)
+      // Groups
       sec.groups.map((grp,gi) => e("div",{key:gi},
+
         // Conference sub-header for CBB
         grp.label && e("div",{style:{
-          padding:"5px 12px 4px",
-          background:"rgba(255,255,255,0.025)",
-          borderBottom:"1px solid rgba(255,255,255,0.04)",
+          padding:"6px 14px 5px",
+          background:"rgba(255,255,255,0.03)",
+          borderBottom:"1px solid rgba(255,255,255,0.05)",
         }},
-          e("span",{style:{fontSize:11,fontWeight:900,fontFamily:F,color:"rgba(255,255,255,0.4)",letterSpacing:1}},
-            grp.label.toUpperCase()+" · "+grp.games.length),
+          e("span",{style:{fontSize:12,fontWeight:900,fontFamily:F,color:"rgba(255,255,255,0.45)",letterSpacing:1.5}},
+            grp.label.toUpperCase()+"  ·  "+grp.games.length+" games"),
         ),
-        // Game rows
-        grp.games.map(g => e(ScoreRow,{
-          key:g.id, game:g, favs,
-          onTap:()=>onTapGame(g, grp.slot),
-        })),
+
+        // 2-column card grid
+        e("div",{style:{
+          display:"grid",
+          gridTemplateColumns:"repeat(2, 1fr)",
+          gap:10,
+          padding:"10px 12px",
+        }},
+          grp.games.map(g => e(ScoreRow,{
+            key:g.id, game:g, favs,
+            onTap:()=>onTapGame(g, grp.slot),
+          })),
+        ),
       )),
     )),
-
-    // Bottom padding so last item isn't hidden behind anything
-    e("div",{style:{height:20}}),
   );
 }
 
