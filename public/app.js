@@ -69,6 +69,21 @@ async function fetchCBBEvents() {
   return [];
 }
 
+// ── MODEL PICKS ───────────────────────────────────────────────────
+async function fetchPicks() {
+  try {
+    const res = await fetch("https://cbbmodel.vercel.app/latest.json", {
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return {};
+    const data = await res.json();
+    // Return a map of game_id → pick object for fast lookup
+    const map = {};
+    (data.picks || []).forEach(p => { map[p.game_id] = p; });
+    return map;
+  } catch { return {}; }
+}
+
 // ── PARSE EVENT ───────────────────────────────────────────────────
 function parseGame(ev, sport, league) {
   try {
@@ -274,6 +289,7 @@ function getCover(game) {
 //  DETAIL PANEL — full screen overlay on card tap
 // ═══════════════════════════════════════════════════════════════════
 function DetailPanel({ game, sport, league, favs, onToggleFav, onClose }) {
+  const pick = game.pick || null;
   const [detail,   setDetail]   = useState(null);
   const [loading,  setLoading]  = useState(true);
   const [tab,      setTab]      = useState("box"); // "box" | "pbp"
@@ -405,6 +421,106 @@ function DetailPanel({ game, sport, league, favs, onToggleFav, onClose }) {
 
       !loading&&game.status==="pre"&&e("div",{style:{textAlign:"center",padding:60,color:"rgba(255,255,255,0.2)",fontSize:17,fontFamily:F,letterSpacing:2}},"GAME HASN'T STARTED YET"),
 
+      // ── MODEL PICK BLOCK (always shown when pick exists) ──
+      pick && e("div",{style:{
+        marginBottom:16, borderRadius:10, overflow:"hidden",
+        border:"1px solid rgba(126,184,247,0.2)",
+        background:"linear-gradient(135deg,rgba(126,184,247,0.07),rgba(0,0,0,0))",
+      }},
+        // Header
+        e("div",{style:{
+          padding:"10px 14px 8px", display:"flex", alignItems:"center",
+          justifyContent:"space-between",
+          borderBottom:"1px solid rgba(255,255,255,0.06)",
+        }},
+          e("div",{style:{display:"flex",alignItems:"center",gap:8}},
+            e("span",{style:{fontSize:18}},"🧠"),
+            e("span",{style:{fontSize:16,fontWeight:900,fontFamily:F,color:"#7EB8F7",letterSpacing:1}},
+              "MODEL PICK"),
+          ),
+          // Result badge if final
+          game.status==="final" && (() => {
+            const pickWon = (pick.pick_abbr===game.home.abbr&&(game.home.score||0)>(game.away.score||0))
+                          ||(pick.pick_abbr===game.away.abbr&&(game.away.score||0)>(game.home.score||0));
+            return e("div",{style:{
+              padding:"3px 10px", borderRadius:6, fontWeight:900, fontSize:13,
+              fontFamily:F, letterSpacing:1,
+              background:pickWon?"rgba(48,209,88,0.15)":"rgba(255,69,58,0.15)",
+              border:"1px solid "+(pickWon?"rgba(48,209,88,0.4)":"rgba(255,69,58,0.4)"),
+              color:pickWon?"#30D158":"#FF453A",
+            }}, pickWon?"✅ CORRECT":"❌ MISSED");
+          })(),
+          game.status!=="final" && e("div",{style:{
+            padding:"3px 10px", borderRadius:6, fontWeight:900, fontSize:12,
+            fontFamily:F, letterSpacing:1,
+            background:"rgba(126,184,247,0.1)", color:"#7EB8F7",
+          }}, Math.round(pick.confidence)+"% CONF"),
+        ),
+
+        // Main pick row
+        e("div",{style:{padding:"12px 14px",display:"flex",alignItems:"center",gap:16}},
+          // Pick team logo
+          pick.pick_abbr===game.home.abbr
+            ? (game.home.logo&&e("img",{src:game.home.logo,width:44,height:44,style:{objectFit:"contain",filter:"drop-shadow(0 1px 6px rgba(0,0,0,0.8))",flexShrink:0}}))
+            : (game.away.logo&&e("img",{src:game.away.logo,width:44,height:44,style:{objectFit:"contain",filter:"drop-shadow(0 1px 6px rgba(0,0,0,0.8))",flexShrink:0}})),
+
+          e("div",{style:{flex:1}},
+            e("div",{style:{fontSize:22,fontWeight:900,fontFamily:F,color:"#fff",letterSpacing:0.5}},
+              pick.pick_abbr),
+            e("div",{style:{fontSize:13,color:"rgba(255,255,255,0.4)",fontFamily:F,marginTop:2}},
+              "to win"),
+          ),
+
+          // Projected scores
+          e("div",{style:{textAlign:"right"}},
+            e("div",{style:{fontSize:13,color:"rgba(255,255,255,0.35)",fontFamily:F,marginBottom:3}},"PROJECTED"),
+            e("div",{style:{fontSize:18,fontWeight:900,fontFamily:F,color:"#fff",fontVariantNumeric:"tabular-nums"}},
+              Math.round(pick.away_projected_score)+" – "+Math.round(pick.home_projected_score)),
+            e("div",{style:{fontSize:11,color:"rgba(255,255,255,0.25)",fontFamily:F,marginTop:1}},
+              pick.away_abbr+" vs "+pick.home_abbr),
+          ),
+        ),
+
+        // Spread comparison row
+        e("div",{style:{
+          padding:"8px 14px 12px",
+          display:"flex", gap:8, flexWrap:"wrap",
+        }},
+          // Model spread
+          e("div",{style:{
+            flex:1, minWidth:100, background:"rgba(126,184,247,0.08)",
+            border:"1px solid rgba(126,184,247,0.2)", borderRadius:7, padding:"7px 10px",
+          }},
+            e("div",{style:{fontSize:10,fontWeight:900,fontFamily:F,color:"rgba(126,184,247,0.7)",letterSpacing:1,marginBottom:3}},"MODEL SPREAD"),
+            e("div",{style:{fontSize:18,fontWeight:900,fontFamily:F,color:"#7EB8F7",fontVariantNumeric:"tabular-nums"}},
+              (pick.predicted_spread>0?"+":"")+pick.predicted_spread.toFixed(1)),
+          ),
+          // Market spread
+          e("div",{style:{
+            flex:1, minWidth:100, background:"rgba(255,255,255,0.04)",
+            border:"1px solid rgba(255,255,255,0.1)", borderRadius:7, padding:"7px 10px",
+          }},
+            e("div",{style:{fontSize:10,fontWeight:900,fontFamily:F,color:"rgba(255,255,255,0.35)",letterSpacing:1,marginBottom:3}},"MARKET SPREAD"),
+            e("div",{style:{fontSize:18,fontWeight:900,fontFamily:F,color:"rgba(255,255,255,0.7)",fontVariantNumeric:"tabular-nums"}},
+              pick.market&&pick.market.spread!=null
+                ? (pick.market.spread>0?"+":"")+pick.market.spread
+                : "—"),
+          ),
+          // Edge
+          pick.model_vs_market && e("div",{style:{
+            flex:1, minWidth:100,
+            background:pick.model_vs_market.spread_edge>0?"rgba(48,209,88,0.08)":"rgba(255,69,58,0.08)",
+            border:"1px solid "+(pick.model_vs_market.spread_edge>0?"rgba(48,209,88,0.25)":"rgba(255,69,58,0.25)"),
+            borderRadius:7, padding:"7px 10px",
+          }},
+            e("div",{style:{fontSize:10,fontWeight:900,fontFamily:F,color:"rgba(255,255,255,0.35)",letterSpacing:1,marginBottom:3}},"EDGE"),
+            e("div",{style:{fontSize:18,fontWeight:900,fontFamily:F,fontVariantNumeric:"tabular-nums",
+              color:pick.model_vs_market.spread_edge>0?"#30D158":"#FF453A"}},
+              (pick.model_vs_market.spread_edge>0?"+":"")+pick.model_vs_market.spread_edge.toFixed(1)),
+          ),
+        ),
+      ),
+
       !loading&&detail&&tab==="box"&&game.status!=="pre"&&e("div",{style:{display:"flex",flexDirection:"column",gap:24}},
         e("div",null,
           e("div",{style:{fontSize:14,fontWeight:900,fontFamily:F,letterSpacing:2,color:game.away.color,marginBottom:10,textTransform:"uppercase"}},game.away.abbr+" — "+game.away.name),
@@ -453,6 +569,7 @@ function RankBadge({ rank, fontSize }) {
 }
 
 function GameCard({ game, flash, rowH, favs, onTap }) {
+  const pick    = game.pick || null;
   const covered = getCover(game);
   const isLive  = game.status === "live";
   const isFinal = game.status === "final";
@@ -573,12 +690,50 @@ function GameCard({ game, flash, rowH, favs, onTap }) {
       teamRow("home"),
     ),
     e("div",{style:{height:GAP2,flexShrink:0}}),
-    e("div",{style:{height:LEAD,flexShrink:0,display:"flex",gap:6,overflow:"hidden",borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:Math.round(LEAD*0.06)}},
-      game.sport==="baseball"&&!isPre&&diamond(),
-      leadCol("away"),
-      e("div",{style:{width:1,background:"rgba(255,255,255,0.07)",alignSelf:"stretch",flexShrink:0}}),
-      leadCol("home"),
-    ),
+    // LEADERS / PICK row
+    pick
+      ? e("div",{style:{height:LEAD,flexShrink:0,display:"flex",alignItems:"center",gap:6,overflow:"hidden",borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:Math.round(LEAD*0.06)}},
+          // Pick result indicator (after game ends)
+          (() => {
+            if (game.status==="final") {
+              const pickWon = (pick.pick_abbr===game.home.abbr&&(game.home.score||0)>(game.away.score||0))
+                            ||(pick.pick_abbr===game.away.abbr&&(game.away.score||0)>(game.home.score||0));
+              return e("span",{style:{fontSize:Math.round(LEAD*0.22),flexShrink:0}}, pickWon?"✅":"❌");
+            }
+            return e("span",{style:{fontSize:Math.round(LEAD*0.18),flexShrink:0}},"🧠");
+          })(),
+          e("div",{style:{flex:1,minWidth:0,overflow:"hidden"}},
+            // Pick team + confidence
+            e("div",{style:{display:"flex",alignItems:"baseline",gap:4,overflow:"hidden"}},
+              e("span",{style:{fontSize:Math.round(LEAD*0.13),fontWeight:900,color:"rgba(255,255,255,0.45)",fontFamily:F,letterSpacing:0.5,flexShrink:0}},"PICK"),
+              e("span",{style:{fontSize:Math.round(LEAD*0.17),fontWeight:900,color:"#fff",fontFamily:F,letterSpacing:0.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},pick.pick_abbr),
+              e("span",{style:{fontSize:Math.round(LEAD*0.12),color:"rgba(255,255,255,0.4)",fontFamily:F,flexShrink:0}},Math.round(pick.confidence)+"%"),
+            ),
+            // Model spread vs market spread
+            e("div",{style:{display:"flex",alignItems:"baseline",gap:5,marginTop:Math.round(LEAD*0.03),overflow:"hidden"}},
+              e("span",{style:{fontSize:Math.round(LEAD*0.11),color:"rgba(255,255,255,0.35)",fontFamily:F,flexShrink:0}},"MDL"),
+              e("span",{style:{fontSize:Math.round(LEAD*0.14),fontWeight:900,color:"#7EB8F7",fontFamily:F,fontVariantNumeric:"tabular-nums",flexShrink:0}},
+                (pick.predicted_spread>0?"+":"")+pick.predicted_spread.toFixed(1)),
+              e("span",{style:{fontSize:Math.round(LEAD*0.11),color:"rgba(255,255,255,0.2)",fontFamily:F,flexShrink:0}},"MKT"),
+              e("span",{style:{fontSize:Math.round(LEAD*0.14),fontWeight:900,color:"rgba(255,255,255,0.55)",fontFamily:F,fontVariantNumeric:"tabular-nums",flexShrink:0}},
+                pick.market&&pick.market.spread!=null
+                  ? (pick.market.spread>0?"+":"")+pick.market.spread
+                  : "—"),
+            ),
+          ),
+          // Edge pill
+          pick.model_vs_market&&Math.abs(pick.model_vs_market.spread_edge)>=2&&
+            e("div",{style:{flexShrink:0,background:pick.model_vs_market.spread_edge>0?"rgba(48,209,88,0.15)":"rgba(255,69,58,0.15)",border:"1px solid "+(pick.model_vs_market.spread_edge>0?"rgba(48,209,88,0.4)":"rgba(255,69,58,0.4)"),borderRadius:5,padding:"1px 5px"}},
+              e("span",{style:{fontSize:Math.round(LEAD*0.13),fontWeight:900,fontFamily:F,color:pick.model_vs_market.spread_edge>0?"#30D158":"#FF453A"}},
+                "EDGE "+(pick.model_vs_market.spread_edge>0?"+":"")+pick.model_vs_market.spread_edge.toFixed(1)),
+            ),
+        )
+      : e("div",{style:{height:LEAD,flexShrink:0,display:"flex",gap:6,overflow:"hidden",borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:Math.round(LEAD*0.06)}},
+          game.sport==="baseball"&&!isPre&&diamond(),
+          leadCol("away"),
+          e("div",{style:{width:1,background:"rgba(255,255,255,0.07)",alignSelf:"stretch",flexShrink:0}}),
+          leadCol("home"),
+        ),
   );
 }
 
@@ -855,6 +1010,7 @@ function SportsBoard() {
   const [r2,          setR2]          = useState(1);
   const [pinnedGame,  setPinnedGame]  = useState(null);
   const [showFavs,    setShowFavs]    = useState(false);
+  const [picks,       setPicks]       = useState({});  // game_id → pick
   const [favs,        setFavs]        = useState(() => {
     try {
       const saved = localStorage.getItem("sb_favs");
@@ -891,9 +1047,15 @@ function SportsBoard() {
         });
       });
 
-      const results = await Promise.allSettled(
-        NON_CBB.map(lg => espnFetch(lg.sport,lg.league,"scoreboard",{limit:40}).then(data=>({lg,events:(data&&data.events)||[]})))
-      );
+      // Fetch scores + picks in parallel
+      const [picksMap, ...results] = await Promise.all([
+        fetchPicks(),
+        ...NON_CBB.map(lg => Promise.allSettled([
+          espnFetch(lg.sport,lg.league,"scoreboard",{limit:40}).then(data=>({lg,events:(data&&data.events)||[]}))
+        ]).then(r=>r[0])),
+      ]);
+
+      setPicks(picksMap);
 
       results.forEach(r => {
         if (r.status!=="fulfilled") return;
@@ -907,7 +1069,7 @@ function SportsBoard() {
       try {
         const cbbEvents = await fetchCBBEvents();
         const allGames  = cbbEvents.map(ev=>parseGame(ev,"basketball","mens-college-basketball")).filter(Boolean)
-          .map(g=>({...g,leaders:prevLeaders[g.id]||g.leaders}));
+          .map(g=>({...g, leaders:prevLeaders[g.id]||g.leaders, pick:picksMap[g.id]||null }));
         allGames.forEach(g=>{prevScores.current[g.id]={home:g.home.score,away:g.away.score};});
         const confSlots = groupCBBByConf(allGames);
         const nbaIdx = nextSlots.findIndex(s=>s.key==="nba");
