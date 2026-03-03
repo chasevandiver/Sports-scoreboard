@@ -568,6 +568,18 @@ function RankBadge({ rank, fontSize }) {
   return e("span",{style:{fontSize,fontWeight:900,fontFamily:F,color:"#F5C518",background:"rgba(245,197,24,0.12)",border:"1px solid rgba(245,197,24,0.45)",borderRadius:3,padding:"0 3px",lineHeight:"1.3",flexShrink:0,marginRight:2}},"#"+rank);
 }
 
+// Return the market spread string from the picked team's perspective
+// e.g. if market says "SIU +9.5" and pick is SIU → "+9.5"
+//      if market says "SIU +9.5" and pick is the other team → "-9.5"
+function pickSpreadLabel(pick) {
+  if (!pick || !pick.market || pick.market.spread == null) return null;
+  const mkt = pick.market.spread;
+  const holder = (pick.market.spread_holder || "").trim();
+  // If the spread_holder matches the pick, use as-is; otherwise flip
+  const val = holder === pick.pick_abbr || holder === pick.pick ? mkt : -mkt;
+  return (val > 0 ? "+" : "") + val;
+}
+
 function GameCard({ game, flash, rowH, favs, onTap }) {
   const pick    = game.pick || null;
   const covered = getCover(game);
@@ -707,8 +719,8 @@ function GameCard({ game, flash, rowH, favs, onTap }) {
             e("div",{style:{display:"flex",alignItems:"baseline",gap:4,overflow:"hidden"}},
               e("span",{style:{fontSize:Math.round(LEAD*0.13),fontWeight:900,color:"rgba(255,255,255,0.45)",fontFamily:F,letterSpacing:0.5,flexShrink:0}},"PICK:"),
               e("span",{style:{fontSize:Math.round(LEAD*0.17),fontWeight:900,color:"#fff",fontFamily:F,letterSpacing:0.5,flexShrink:0}},pick.pick_abbr),
-              e("span",{style:{fontSize:Math.round(LEAD*0.15),fontWeight:900,color:"#7EB8F7",fontFamily:F,fontVariantNumeric:"tabular-nums",flexShrink:0}},
-                (pick.predicted_spread>0?"+":"")+pick.predicted_spread.toFixed(1)),
+              pickSpreadLabel(pick)&&e("span",{style:{fontSize:Math.round(LEAD*0.15),fontWeight:900,color:"rgba(255,255,255,0.65)",fontFamily:F,fontVariantNumeric:"tabular-nums",flexShrink:0}},
+                pickSpreadLabel(pick)),
               e("span",{style:{fontSize:Math.round(LEAD*0.12),color:"rgba(255,255,255,0.35)",fontFamily:F,flexShrink:0}},
                 "("+Math.round(pick.confidence)+"%)"),
             ),
@@ -929,8 +941,8 @@ function ScoreRow({ game, favs, onTap }) {
                 fontSize:13,fontWeight:900,fontFamily:F,letterSpacing:0.5,
                 color: pickResult==="✅"?"#30D158" : pickResult==="❌"?"#FF453A" : "#fff",
               }}, pick.pick_abbr),
-              e("span",{style:{fontSize:13,fontWeight:900,color:"#7EB8F7",fontFamily:F,fontVariantNumeric:"tabular-nums"}},
-                (pick.predicted_spread>0?"+":"")+pick.predicted_spread.toFixed(1)),
+              pickSpreadLabel(pick)&&e("span",{style:{fontSize:13,fontWeight:900,color:"rgba(255,255,255,0.65)",fontFamily:F,fontVariantNumeric:"tabular-nums"}},
+                pickSpreadLabel(pick)),
               e("span",{style:{fontSize:12,color:"rgba(255,255,255,0.35)",fontFamily:F}},
                 "("+Math.round(pick.confidence)+"%)"),
             )
