@@ -171,6 +171,7 @@ function parseGame(ev, sport, league) {
       bases: sit ? [!!sit.onFirst, !!sit.onSecond, !!sit.onThird] : [false,false,false],
       outs:  (sit && sit.outs) || 0,
       leaders: { home:[], away:[] },
+      pitchers: { home: null, away: null },
       alert: null,
       detail: null,   // loaded on tap
     };
@@ -234,6 +235,40 @@ function parseLeaders(summary) {
     }
     return result;
   } catch { return {home:[],away:[]}; }
+}
+
+// ── PARSE PITCHERS (baseball only) ────────────────────────────────
+function parsePitchers(summary) {
+  try {
+    const result = { home: null, away: null };
+    const hc = ((summary.header&&summary.header.competitions&&summary.header.competitions[0])||{}).competitors||[];
+    const homeId = (hc.find(c=>c.homeAway==="home")||{team:{}}).team.id;
+    const bs = summary && summary.boxscore;
+    if (!bs) return result;
+    (bs.players||[]).forEach(grp => {
+      const side = grp.team&&grp.team.id===homeId ? "home" : "away";
+      const pitchStats = (grp.statistics||[]).find(s =>
+        (s.labels||[]).includes("IP") || (s.name||"").toLowerCase().includes("pitch")
+      );
+      if (!pitchStats) return;
+      const lb  = pitchStats.labels || [];
+      const ipI = lb.indexOf("IP");
+      const erI = lb.indexOf("ER");
+      const kI  = lb.indexOf("K");
+      const active = (pitchStats.athletes||[]).filter(a =>
+        a.stats && a.stats.some(s => s !== "--" && s !== "0.0" && s !== "0")
+      );
+      if (!active.length) return;
+      const p = active[active.length - 1]; // last/current pitcher
+      result[side] = {
+        name: (p.athlete&&(p.athlete.shortName||p.athlete.displayName))||"—",
+        ip:   ipI>=0&&p.stats[ipI]&&p.stats[ipI]!=="--" ? p.stats[ipI] : "0",
+        er:   erI>=0&&p.stats[erI]&&p.stats[erI]!=="--" ? p.stats[erI] : "0",
+        k:    kI>=0&&p.stats[kI]&&p.stats[kI]!=="--"   ? p.stats[kI]  : "0",
+      };
+    });
+    return result;
+  } catch { return { home: null, away: null }; }
 }
 
 // ── PARSE DETAIL (box score + play by play) ───────────────────────
@@ -643,6 +678,24 @@ function GameCard({ game, flash, rowH, favs, onTap }) {
     );
   };
 
+  const pitcherCol = side => {
+    const t = game[side];
+    const p = game.pitchers && game.pitchers[side];
+    return e("div",{style:{flex:1,minWidth:0,overflow:"hidden"}},
+      e("div",{style:{fontSize:lhFz,fontWeight:800,letterSpacing:1,color:t.color,textTransform:"uppercase",fontFamily:F,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:Math.round(LEAD*0.04)}},t.abbr),
+      p
+        ? e("div",{style:{overflow:"hidden"}},
+            e("div",{style:{fontSize:lnFz,fontWeight:700,color:"rgba(255,255,255,0.82)",fontFamily:F,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:Math.round(LEAD*0.02)}},p.name),
+            e("div",{style:{display:"flex",gap:4,alignItems:"baseline"}},
+              e("span",{style:{fontSize:lpFz,fontWeight:900,color:"#fff",fontFamily:F,fontVariantNumeric:"tabular-nums"}},p.ip+" IP"),
+              p.er!=="0"&&e("span",{style:{fontSize:lsFz,color:"rgba(255,255,255,0.38)"}},p.er+"ER"),
+              e("span",{style:{fontSize:lsFz,color:"rgba(255,255,255,0.38)"}},p.k+"K"),
+            ),
+          )
+        : e("span",{style:{fontSize:lnFz,color:"rgba(255,255,255,0.15)",fontStyle:"italic"}},"—"),
+    );
+  };
+
   const diamond = () => {
     const S=Math.round(LEAD*0.19);
     const pad=Math.round(S*0.5); // padding to accommodate rotation overflow
@@ -735,9 +788,9 @@ function GameCard({ game, flash, rowH, favs, onTap }) {
         )
       : e("div",{style:{height:LEAD,flexShrink:0,display:"flex",gap:6,overflow:"hidden",borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:Math.round(LEAD*0.06)}},
           game.sport==="baseball"&&!isPre&&diamond(),
-          leadCol("away"),
+          game.sport==="baseball" ? pitcherCol("away") : leadCol("away"),
           e("div",{style:{width:1,background:"rgba(255,255,255,0.07)",alignSelf:"stretch",flexShrink:0}}),
-          leadCol("home"),
+          game.sport==="baseball" ? pitcherCol("home") : leadCol("home"),
         ),
   );
 }
@@ -834,6 +887,8 @@ function ScrollRow({ rowH, speed, games, slot, flashIds, favs, onLoop, onSwipe, 
 // ═══════════════════════════════════════════════════════════════════
 
 function ScoreRow({ game, favs, onTap }) {
+  // iPad / large-screen font scaling
+  const scale   = Math.min(Math.max(window.innerWidth / 390, 1), 1.65);
   const pick    = game.pick || null;
   const isLive  = game.status === "live";
   const isFinal = game.status === "final";
@@ -842,6 +897,13 @@ function ScoreRow({ game, favs, onTap }) {
   const aw = !isPre && (game.away.score||0) > (game.home.score||0);
   const isFav   = favs.has(game.home.abbr) || favs.has(game.away.abbr);
   const covered = getCover(game);
+
+  const logoSz  = Math.round(30 * scale);
+  const abbrFz  = Math.round(17 * scale);
+  const scoreFz = Math.round(22 * scale);
+  const smallFz = Math.round(12 * scale);
+  const tinyFz  = Math.round(11 * scale);
+  const statFz  = Math.round(13 * scale);
 
   // Pick result
   let pickResult = null;
@@ -854,29 +916,95 @@ function ScoreRow({ game, favs, onTap }) {
     const t   = game[side];
     const win = side==="home" ? hw : aw;
     const isTf = favs.has(t.abbr);
-    return e("div",{style:{display:"flex",alignItems:"center",gap:10,padding:"5px 0"}},
+    return e("div",{style:{display:"flex",alignItems:"center",gap:Math.round(10*scale),padding:Math.round(5*scale)+"px 0"}},
       // Logo
       t.logo
-        ? e("img",{src:t.logo,width:30,height:30,style:{objectFit:"contain",flexShrink:0,filter:"drop-shadow(0 1px 4px rgba(0,0,0,0.9))"}})
-        : e("div",{style:{width:30,height:30,borderRadius:5,flexShrink:0,background:t.color+"33"}}),
+        ? e("img",{src:t.logo,width:logoSz,height:logoSz,style:{objectFit:"contain",flexShrink:0,filter:"drop-shadow(0 1px 4px rgba(0,0,0,0.9))"}})
+        : e("div",{style:{width:logoSz,height:logoSz,borderRadius:5,flexShrink:0,background:t.color+"33"}}),
       // Name + record
       e("div",{style:{flex:1,minWidth:0,display:"flex",alignItems:"baseline",gap:5,overflow:"hidden"}},
-        isTf && e("span",{style:{fontSize:12,flexShrink:0}},"⭐"),
-        t.rank && e("span",{style:{fontSize:12,fontWeight:900,fontFamily:F,color:"#F5C518",flexShrink:0}},"#"+t.rank),
+        isTf && e("span",{style:{fontSize:smallFz,flexShrink:0}},"⭐"),
+        t.rank && e("span",{style:{fontSize:smallFz,fontWeight:900,fontFamily:F,color:"#F5C518",flexShrink:0}},"#"+t.rank),
         e("span",{style:{
-          fontSize:17,fontWeight:900,fontFamily:F,letterSpacing:0.3,
+          fontSize:abbrFz,fontWeight:900,fontFamily:F,letterSpacing:0.3,
           color: isFinal&&!win ? "rgba(255,255,255,0.3)" : "#fff",
           overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
         }}, t.abbr),
-        isPre && t.record && e("span",{style:{fontSize:12,color:"rgba(255,255,255,0.28)",fontFamily:F,flexShrink:0}},t.record),
+        isPre && t.record && e("span",{style:{fontSize:smallFz,color:"rgba(255,255,255,0.28)",fontFamily:F,flexShrink:0}},t.record),
       ),
       // Score
       !isPre && e("span",{style:{
-        fontSize:22,fontWeight:900,fontFamily:F,fontVariantNumeric:"tabular-nums",flexShrink:0,
+        fontSize:scoreFz,fontWeight:900,fontFamily:F,fontVariantNumeric:"tabular-nums",flexShrink:0,
         color: isFinal&&!win ? "rgba(255,255,255,0.25)" : "#fff",
         textShadow: win&&isLive ? "0 0 14px "+t.color+"cc" : "none",
-        minWidth:30,textAlign:"right",
+        minWidth:Math.round(30*scale),textAlign:"right",
       }}, t.score),
+    );
+  };
+
+  // Leaders section for non-baseball professional sports
+  const hasLeaders = !isPre && game.sport !== "baseball" &&
+    (game.leaders.home.length > 0 || game.leaders.away.length > 0);
+
+  const leadersSection = () => {
+    const lnFz = Math.round(11 * scale);
+    const lpFz = Math.round(13 * scale);
+    const lsFz = Math.round(10 * scale);
+    const sides = ["away","home"];
+    return e("div",{style:{
+      display:"flex",gap:8,marginTop:Math.round(6*scale),
+      paddingTop:Math.round(6*scale),
+      borderTop:"1px solid rgba(255,255,255,0.06)",
+    }},
+      sides.map(side => {
+        const t  = game[side];
+        const pp = game.leaders[side] || [];
+        return e("div",{key:side,style:{flex:1,minWidth:0}},
+          e("div",{style:{fontSize:lsFz,fontWeight:900,letterSpacing:1,color:t.color,textTransform:"uppercase",fontFamily:F,marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},t.abbr),
+          pp.length
+            ? pp.slice(0,2).map((p,i)=>e("div",{key:i,style:{display:"flex",alignItems:"baseline",gap:3,marginBottom:1,overflow:"hidden"}},
+                e("span",{style:{fontSize:lnFz,fontWeight:700,color:"rgba(255,255,255,0.75)",fontFamily:F,flex:"1 1 0",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},p.name),
+                e("span",{style:{fontSize:lpFz,fontWeight:900,color:"#fff",fontFamily:F,fontVariantNumeric:"tabular-nums",flexShrink:0}},p.pts),
+                p.reb&&p.reb!=="0"&&p.reb!=="--"&&e("span",{style:{fontSize:lsFz,color:"rgba(255,255,255,0.35)",flexShrink:0}},p.reb+"r"),
+                p.ast&&p.ast!=="0"&&p.ast!=="--"&&e("span",{style:{fontSize:lsFz,color:"rgba(255,255,255,0.35)",flexShrink:0}},p.ast+"a"),
+              ))
+            : e("span",{style:{fontSize:lnFz,color:"rgba(255,255,255,0.15)",fontStyle:"italic",fontFamily:F}},"—"),
+        );
+      }),
+    );
+  };
+
+  // Pitchers section for baseball
+  const hasPitchers = !isPre && game.sport === "baseball" &&
+    game.pitchers && (game.pitchers.home || game.pitchers.away);
+
+  const pitchersSection = () => {
+    const lnFz = Math.round(11 * scale);
+    const lpFz = Math.round(12 * scale);
+    const lsFz = Math.round(10 * scale);
+    const sides = ["away","home"];
+    return e("div",{style:{
+      display:"flex",gap:8,marginTop:Math.round(6*scale),
+      paddingTop:Math.round(6*scale),
+      borderTop:"1px solid rgba(255,255,255,0.06)",
+    }},
+      sides.map(side => {
+        const t = game[side];
+        const p = game.pitchers[side];
+        return e("div",{key:side,style:{flex:1,minWidth:0}},
+          e("div",{style:{fontSize:lsFz,fontWeight:900,letterSpacing:1,color:t.color,textTransform:"uppercase",fontFamily:F,marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},t.abbr),
+          p
+            ? e("div",null,
+                e("div",{style:{fontSize:lnFz,fontWeight:700,color:"rgba(255,255,255,0.75)",fontFamily:F,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:1}},p.name),
+                e("div",{style:{display:"flex",gap:4,alignItems:"baseline"}},
+                  e("span",{style:{fontSize:lpFz,fontWeight:900,color:"#fff",fontFamily:F,fontVariantNumeric:"tabular-nums"}},p.ip+" IP"),
+                  p.er!=="0"&&e("span",{style:{fontSize:lsFz,color:"rgba(255,255,255,0.38)"}},p.er+"ER"),
+                  e("span",{style:{fontSize:lsFz,color:"rgba(255,255,255,0.38)"}},p.k+"K"),
+                ),
+              )
+            : e("span",{style:{fontSize:lnFz,color:"rgba(255,255,255,0.15)",fontStyle:"italic",fontFamily:F}},"—"),
+        );
+      }),
     );
   };
 
@@ -896,55 +1024,61 @@ function ScoreRow({ game, favs, onTap }) {
     // Top color bar
     e("div",{style:{height:3,background:"linear-gradient(90deg,"+game.away.color+","+game.home.color+")",opacity:0.8}}),
 
-    e("div",{style:{padding:"8px 12px 10px"}},
+    e("div",{style:{padding:Math.round(8*scale)+"px "+Math.round(12*scale)+"px "+Math.round(10*scale)+"px"}},
       // Status row
-      e("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}},
+      e("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:Math.round(6*scale)}},
         e("div",{style:{display:"flex",alignItems:"center",gap:5}},
-          isLive && e("div",{className:"live-dot",style:{width:7,height:7,borderRadius:"50%",background:"#FF3B30",boxShadow:"0 0 6px #FF3B30",flexShrink:0}}),
+          isLive && e("div",{className:"live-dot",style:{width:Math.round(7*scale),height:Math.round(7*scale),borderRadius:"50%",background:"#FF3B30",boxShadow:"0 0 6px #FF3B30",flexShrink:0}}),
           e("span",{style:{
-            fontSize:12,fontWeight:900,fontFamily:F,letterSpacing:0.8,
+            fontSize:Math.round(12*scale),fontWeight:900,fontFamily:F,letterSpacing:0.8,
             color: isLive?"#FF3B30" : isFinal?"rgba(255,255,255,0.35)" : "rgba(255,255,255,0.55)",
           }}, game.period),
-          isLive && game.clock && e("span",{style:{fontSize:12,fontFamily:F,color:"rgba(255,255,255,0.6)",marginLeft:2}},game.clock),
+          isLive && game.clock && e("span",{style:{fontSize:Math.round(12*scale),fontFamily:F,color:"rgba(255,255,255,0.6)",marginLeft:2}},game.clock),
         ),
-        game.channel && e("span",{style:{fontSize:11,color:"rgba(255,255,255,0.25)",fontFamily:F}},"📺 "+game.channel),
+        game.channel && e("span",{style:{fontSize:tinyFz,color:"rgba(255,255,255,0.25)",fontFamily:F}},"📺 "+game.channel),
       ),
 
       // Team lines
       teamLine("away"),
-      e("div",{style:{height:1,background:"rgba(255,255,255,0.06)",margin:"1px 0 1px 40px"}}),
+      e("div",{style:{height:1,background:"rgba(255,255,255,0.06)",margin:"1px 0 1px "+Math.round(40*scale)+"px"}}),
       teamLine("home"),
+
+      // Leaders row (non-baseball pro sports)
+      hasLeaders && leadersSection(),
+
+      // Pitchers row (baseball)
+      hasPitchers && pitchersSection(),
 
       // Bottom row: spread + pick
       e("div",{style:{
         display:"flex",alignItems:"center",justifyContent:"space-between",
-        marginTop:7,paddingTop:7,
+        marginTop:Math.round(7*scale),paddingTop:Math.round(7*scale),
         borderTop:"1px solid rgba(255,255,255,0.06)",
         gap:8,flexWrap:"wrap",
       }},
         // Spread
         game.spread
           ? e("div",{style:{display:"flex",alignItems:"center",gap:5}},
-              e("span",{style:{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.3)",fontFamily:F,letterSpacing:0.5}},"SPR"),
-              e("span",{style:{fontSize:13,fontWeight:900,fontFamily:F,color:"rgba(255,255,255,0.7)"}},
+              e("span",{style:{fontSize:tinyFz,fontWeight:700,color:"rgba(255,255,255,0.3)",fontFamily:F,letterSpacing:0.5}},"SPR"),
+              e("span",{style:{fontSize:statFz,fontWeight:900,fontFamily:F,color:"rgba(255,255,255,0.7)"}},
                 game.spread.favorite+" "+(game.spread.line>0?"+":"")+game.spread.line),
-              covered!==null && e("span",{style:{fontSize:12,fontWeight:900,color:covered?"#30D158":"#FF453A"}},
+              covered!==null && e("span",{style:{fontSize:smallFz,fontWeight:900,color:covered?"#30D158":"#FF453A"}},
                 covered?"✓":"✗"),
             )
-          : e("span",{style:{fontSize:11,color:"rgba(255,255,255,0.15)",fontFamily:F}},isPre?"":"—"),
+          : e("span",{style:{fontSize:tinyFz,color:"rgba(255,255,255,0.15)",fontFamily:F}},isPre?"":"—"),
 
         // Pick badge
         pick
           ? e("div",{style:{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}},
-              e("span",{style:{fontSize:12}}, pickResult || "🧠"),
-              e("span",{style:{fontSize:12,fontWeight:900,color:"rgba(255,255,255,0.4)",fontFamily:F}},"PICK:"),
+              e("span",{style:{fontSize:smallFz}}, pickResult || "🧠"),
+              e("span",{style:{fontSize:smallFz,fontWeight:900,color:"rgba(255,255,255,0.4)",fontFamily:F}},"PICK:"),
               e("span",{style:{
-                fontSize:13,fontWeight:900,fontFamily:F,letterSpacing:0.5,
+                fontSize:statFz,fontWeight:900,fontFamily:F,letterSpacing:0.5,
                 color: pickResult==="✅"?"#30D158" : pickResult==="❌"?"#FF453A" : "#fff",
               }}, pick.pick_abbr),
-              pickSpreadLabel(pick)&&e("span",{style:{fontSize:13,fontWeight:900,color:"rgba(255,255,255,0.65)",fontFamily:F,fontVariantNumeric:"tabular-nums"}},
+              pickSpreadLabel(pick)&&e("span",{style:{fontSize:statFz,fontWeight:900,color:"rgba(255,255,255,0.65)",fontFamily:F,fontVariantNumeric:"tabular-nums"}},
                 pickSpreadLabel(pick)),
-              e("span",{style:{fontSize:12,color:"rgba(255,255,255,0.35)",fontFamily:F}},
+              e("span",{style:{fontSize:smallFz,color:"rgba(255,255,255,0.35)",fontFamily:F}},
                 "("+Math.round(pick.confidence)+"%)"),
             )
           : null,
@@ -1031,7 +1165,21 @@ function ScoresView({ slots, favs, flashIds, onTapGame }) {
 //  FAVORITES PANEL
 // ═══════════════════════════════════════════════════════════════════
 function FavPanel({ slots, favs, onToggle, onClose }) {
-  const [search, setSearch] = useState("");
+  const [search,    setSearch]    = useState("");
+  const [shareMsg,  setShareMsg]  = useState(null);
+
+  const handleShare = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("favs", [...favs].join(","));
+    const link = url.toString();
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(link)
+        .then(() => { setShareMsg("✓ Link copied!"); setTimeout(()=>setShareMsg(null), 2500); })
+        .catch(() => setShareMsg(link));
+    } else {
+      setShareMsg(link);
+    }
+  };
 
   // Collect every unique team across all slots, deduplicated by abbr
   const allTeams = [];
@@ -1096,12 +1244,32 @@ function FavPanel({ slots, favs, onToggle, onClose }) {
             ),
           ),
         ),
-        e("button", { onClick: onClose, style:{
-          background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.12)",
-          borderRadius:8, color:"rgba(255,255,255,0.7)", fontSize:18,
-          cursor:"pointer", padding:"4px 12px", fontFamily:F, lineHeight:1.4,
-        }}, "Done"),
+        e("div",{style:{display:"flex",gap:8,alignItems:"center"}},
+          favs.size > 0 && e("button",{
+            onClick: handleShare,
+            style:{
+              background: shareMsg && shareMsg.startsWith("✓") ? "rgba(48,209,88,0.15)" : "rgba(0,122,255,0.12)",
+              border: "1px solid " + (shareMsg && shareMsg.startsWith("✓") ? "rgba(48,209,88,0.4)" : "rgba(0,122,255,0.3)"),
+              borderRadius:8,
+              color: shareMsg && shareMsg.startsWith("✓") ? "#30D158" : "#0A84FF",
+              fontSize:13, fontWeight:800, fontFamily:F,
+              cursor:"pointer", padding:"4px 10px", lineHeight:1.4,
+            },
+          }, shareMsg && shareMsg.startsWith("✓") ? shareMsg : "🔗 Share"),
+          e("button", { onClick: onClose, style:{
+            background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.12)",
+            borderRadius:8, color:"rgba(255,255,255,0.7)", fontSize:18,
+            cursor:"pointer", padding:"4px 12px", fontFamily:F, lineHeight:1.4,
+          }}, "Done"),
+        ),
       ),
+
+      // Share URL display (if clipboard API unavailable)
+      shareMsg && !shareMsg.startsWith("✓") && e("div",{style:{
+        background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)",
+        borderRadius:8, padding:"8px 12px", wordBreak:"break-all",
+        fontSize:11, color:"rgba(255,255,255,0.55)", fontFamily:"monospace",
+      }}, shareMsg),
 
       // Search box
       e("div", { style:{ position:"relative" }},
@@ -1225,6 +1393,20 @@ function SportsBoard() {
   });
   const [favs,        setFavs]        = useState(() => {
     try {
+      // Import favorites from a shared URL (?favs=DAL,LAL,…)
+      const urlParams = new URLSearchParams(window.location.search);
+      const sharedFavs = urlParams.get("favs");
+      if (sharedFavs) {
+        const imported = new Set(sharedFavs.split(",").map(s=>s.trim().toUpperCase()).filter(Boolean));
+        if (imported.size > 0) {
+          try { localStorage.setItem("sb_favs", JSON.stringify([...imported])); } catch {}
+          // Clean the ?favs= param from the URL without a page reload
+          const clean = new URL(window.location.href);
+          clean.searchParams.delete("favs");
+          window.history.replaceState({}, "", clean.toString());
+          return imported;
+        }
+      }
       const saved = localStorage.getItem("sb_favs");
       return saved ? new Set(JSON.parse(saved)) : DEFAULT_FAVS;
     } catch { return DEFAULT_FAVS; }
@@ -1241,7 +1423,9 @@ function SportsBoard() {
 
   const toggleView = useCallback(() => {
     setViewMode(prev => {
-      const next = prev === "ticker" ? "scores" : "ticker";
+      // cycle: ticker (2-row) → ticker1 (1-row) → scores → ticker
+      const cycle = { ticker:"ticker1", ticker1:"scores", scores:"ticker" };
+      const next = cycle[prev] || "ticker";
       try { localStorage.setItem("sb_view", next); } catch {}
       return next;
     });
@@ -1339,15 +1523,21 @@ function SportsBoard() {
     if (!slots.length) return;
     let cancelled = false;
     const load = async () => {
-      const visible = [slots[r1], slots[r2]].filter(Boolean);
+      // In scores view, also load leaders for all slots (first 4 to cap API calls)
+      const visible = viewMode === "scores"
+        ? slots.slice(0, 4)
+        : [slots[r1], slots[r2]].filter(Boolean);
       for (const slot of visible) {
         for (const g of slot.games.filter(g=>g.status!=="pre")) {
           if (cancelled) return;
           try {
             const s = await espnFetch(slot.sport,slot.league,"summary?event="+g.id,{});
-            const leaders = parseLeaders(s);
+            const leaders  = parseLeaders(s);
+            const pitchers = slot.sport === "baseball" ? parsePitchers(s) : null;
             setSlots(prev => {
-              const next = prev.map(sl=>sl.key!==slot.key?sl:{...sl,games:sl.games.map(x=>x.id===g.id?{...x,leaders}:x)});
+              const next = prev.map(sl=>sl.key!==slot.key?sl:{...sl,games:sl.games.map(x=>x.id!==g.id?x:{
+                ...x, leaders, ...(pitchers ? { pitchers } : {}),
+              })});
               slotsRef.current=next; return next;
             });
           } catch {}
@@ -1358,7 +1548,7 @@ function SportsBoard() {
     load();
     const iv = setInterval(load, 65000);
     return () => { cancelled=true; clearInterval(iv); };
-  }, [slots.length, r1, r2]); // eslint-disable-line
+  }, [slots.length, r1, r2, viewMode]); // eslint-disable-line
 
   // ── Keep screen awake — invisible looping video (works on iOS Safari/PWA) ──
   useEffect(() => {
@@ -1423,17 +1613,18 @@ function SportsBoard() {
   const slot2    = ts.length > 1 ? (ts[ti2 === ti1 ? (ti1 + 1) % ts.length : ti2] || null) : null;
   const spin     = { width:10,height:10,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.15)",borderTopColor:"#fff",flexShrink:0 };
 
-  const renderRow = (slot, rowNum, speed) => {
-    const isBottom = rowNum===2;
-    return e("div",{style:{height:rowH,flexShrink:0,display:"flex",alignItems:"stretch",borderTop:isBottom?"2px solid rgba(255,255,255,0.06)":undefined}},
+  const renderRow = (slot, rowNum, speed, customH) => {
+    const h = customH !== undefined ? customH : rowH;
+    const isBottom = rowNum===2 && customH===undefined;
+    return e("div",{style:{height:h,flexShrink:0,display:"flex",alignItems:"stretch",borderTop:isBottom?"2px solid rgba(255,255,255,0.06)":undefined}},
       slot
         ? e(Fragment,null,
-            e(SportLabel,{slot,rowH}),
+            e(SportLabel,{slot,rowH:h}),
             loading&&!slot.games.length
               ? e("div",{style:{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:10}},
                   e("div",{className:"spin",style:{...spin,width:13,height:13,borderWidth:3,borderTopColor:slot.accent}}),
                   e("span",{style:{fontSize:14,fontWeight:800,color:"rgba(255,255,255,0.28)",fontFamily:F,letterSpacing:3}},"LOADING…"))
-              : e(ScrollRow,{rowH,speed,games:slot.games,slot,flashIds,favs,
+              : e(ScrollRow,{rowH:h,speed,games:slot.games,slot,flashIds,favs,
                   onLoop:()=>handleLoop(rowNum),
                   onSwipe:(dir)=>handleSwipe(rowNum,dir),
                   onTapGame:(g)=>setPinnedGame({game:g,sport:slot.sport,league:slot.league}),
@@ -1473,11 +1664,11 @@ function SportsBoard() {
             const showing = isR1 || isR2;
             return e("div",{
               key:sl.key,
-              onClick:()=> viewMode==="ticker"
+              onClick:()=> (viewMode==="ticker"||viewMode==="ticker1")
                 ? toggleTickerSport(sl.key, allSlotKeys)
                 : null,
               style:{display:"flex",alignItems:"center",gap:3,padding:"2px 7px",borderRadius:20,flexShrink:0,
-                cursor: viewMode==="ticker" ? "pointer" : "default",
+                cursor: (viewMode==="ticker"||viewMode==="ticker1") ? "pointer" : "default",
                 background: enabled ? (showing ? sl.accent+"40" : sl.accent+"18") : "rgba(255,255,255,0.03)",
                 border:"1px solid "+(enabled ? (showing ? sl.accent : sl.accent+"66") : "rgba(255,255,255,0.06)"),
                 transition:"all 0.15s",
@@ -1493,10 +1684,10 @@ function SportsBoard() {
           loading&&e("div",{className:"spin",style:spin}),
         ),
         e("div",{style:{display:"flex",alignItems:"center",gap:6,flexShrink:0}},
-          // View mode toggle
+          // View mode toggle (cycles: 2-row ticker → 1-row ticker → scores)
           e("button",{
             onClick: toggleView,
-            title: viewMode==="ticker" ? "Switch to Scores view" : "Switch to Ticker view",
+            title: { ticker:"Switch to 1-row ticker", ticker1:"Switch to Scores view", scores:"Switch to 2-row ticker" }[viewMode],
             style:{
               background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.12)",
               borderRadius:7, cursor:"pointer", padding:"3px 8px",
@@ -1504,9 +1695,9 @@ function SportsBoard() {
               color:"rgba(255,255,255,0.7)",
             },
           },
-            e("span",null, viewMode==="ticker" ? "⊞" : "▶▶"),
+            e("span",null, { ticker:"⊟", ticker1:"⊞", scores:"▶▶" }[viewMode] || "▶▶"),
             e("span",{style:{fontSize:10,fontWeight:900,fontFamily:F,letterSpacing:0.5}},
-              viewMode==="ticker" ? "SCORES" : "TICKER"),
+              { ticker:"1-ROW", ticker1:"SCORES", scores:"TICKER" }[viewMode] || "TICKER"),
           ),
           e("button",{
             onClick:()=>setShowFavs(true),
@@ -1529,6 +1720,8 @@ function SportsBoard() {
             renderRow(slot1,1,SPEED_ROW1),
             renderRow(slot2,2,SPEED_ROW2),
           )
+        : viewMode === "ticker1"
+        ? renderRow(slot1, 1, SPEED_ROW1, window.innerHeight - HEADER_H)
         : e(ScoresView, { slots, favs, flashIds, onTapGame:(g,sl)=>setPinnedGame({game:g,sport:sl.sport,league:sl.league}) }),
     ),
   );
