@@ -1369,6 +1369,110 @@ function FavPanel({ slots, favs, onToggle, onClose }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+//  SPORT FILTER PANEL
+// ═══════════════════════════════════════════════════════════════════
+function SportFilterPanel({ slots, tickerSports, allSlotKeys, onToggle, onEnableAll, onClose }) {
+  const proSlots  = slots.filter(s => !s.isCBB);
+  const cbbSlots  = slots.filter(s =>  s.isCBB);
+  const allEnabled = !tickerSports;
+  const enabledCount = tickerSports ? tickerSports.size : allSlotKeys.length;
+
+  const renderSection = (title, sectionSlots) => {
+    if (sectionSlots.length === 0) return null;
+    return e(Fragment, null,
+      e("div", { style:{
+        padding:"10px 16px 6px",
+        fontSize:11, fontWeight:900, fontFamily:F, letterSpacing:2,
+        color:"rgba(255,255,255,0.3)",
+        borderBottom:"1px solid rgba(255,255,255,0.05)",
+      }}, title),
+      sectionSlots.map(sl => {
+        const enabled = !tickerSports || tickerSports.has(sl.key);
+        return e("div", {
+          key: sl.key,
+          onClick: () => onToggle(sl.key),
+          style:{
+            display:"flex", alignItems:"center", gap:14,
+            padding:"12px 16px",
+            borderBottom:"1px solid rgba(255,255,255,0.05)",
+            background: enabled ? "linear-gradient(90deg,"+sl.accent+"14,transparent)" : "transparent",
+            cursor:"pointer",
+            transition:"background 0.15s",
+          },
+        },
+          e("span", { style:{ fontSize:26, flexShrink:0 }}, sl.icon),
+          e("div", { style:{ flex:1, minWidth:0 }},
+            e("div", { style:{
+              fontSize:17, fontWeight:900, fontFamily:F, letterSpacing:0.5,
+              color: enabled ? "#fff" : "rgba(255,255,255,0.3)",
+            }}, sl.isCBB ? sl.shortLabel : sl.label),
+            e("div", { style:{ fontSize:12, color:"rgba(255,255,255,0.3)", fontFamily:F, marginTop:2 }},
+              sl.games.length + " game" + (sl.games.length !== 1 ? "s" : "")
+            ),
+          ),
+          e("div", { style:{
+            width:36, height:36, borderRadius:8, flexShrink:0,
+            display:"flex", alignItems:"center", justifyContent:"center",
+            background: enabled ? sl.accent+"25" : "rgba(255,255,255,0.05)",
+            border:"1px solid "+(enabled ? sl.accent+"66" : "rgba(255,255,255,0.08)"),
+            fontSize:18, fontWeight:900, color: enabled ? sl.accent : "rgba(255,255,255,0.15)",
+            transition:"all 0.15s",
+          }}, enabled ? "✓" : ""),
+        );
+      }),
+    );
+  };
+
+  return e("div", { style:{
+    position:"fixed", inset:0, zIndex:200,
+    background:"#0d0d0d",
+    display:"flex", flexDirection:"column", overflow:"hidden",
+  }},
+    // Header
+    e("div", { style:{
+      flexShrink:0, padding:"14px 16px 12px",
+      background:"linear-gradient(180deg,#1e1e1e,#141414)",
+      borderBottom:"1px solid rgba(255,255,255,0.08)",
+      display:"flex", alignItems:"center", justifyContent:"space-between",
+    }},
+      e("div", { style:{ display:"flex", alignItems:"center", gap:10 }},
+        e("span", { style:{ fontSize:22 }}, "📺"),
+        e("div", null,
+          e("div", { style:{ fontSize:18, fontWeight:900, fontFamily:F, color:"#fff", letterSpacing:1 }}, "TICKER SPORTS"),
+          e("div", { style:{ fontSize:12, color:"rgba(255,255,255,0.35)", fontFamily:F, marginTop:1 }},
+            allEnabled
+              ? "All " + allSlotKeys.length + " sports showing"
+              : enabledCount + " of " + allSlotKeys.length + " sports enabled"
+          ),
+        ),
+      ),
+      e("div", { style:{ display:"flex", gap:8, alignItems:"center" }},
+        !allEnabled && e("button", {
+          onClick: onEnableAll,
+          style:{
+            background:"rgba(48,209,88,0.12)", border:"1px solid rgba(48,209,88,0.3)",
+            borderRadius:8, color:"#30D158",
+            fontSize:12, fontWeight:800, fontFamily:F, letterSpacing:1,
+            cursor:"pointer", padding:"4px 10px", lineHeight:1.4,
+          },
+        }, "ALL ON"),
+        e("button", { onClick: onClose, style:{
+          background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.12)",
+          borderRadius:8, color:"rgba(255,255,255,0.7)", fontSize:18,
+          cursor:"pointer", padding:"4px 12px", fontFamily:F, lineHeight:1.4,
+        }}, "Done"),
+      ),
+    ),
+
+    // Sport list
+    e("div", { style:{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch" }},
+      renderSection("PRO SPORTS", proSlots),
+      renderSection("COLLEGE BASKETBALL", cbbSlots),
+    ),
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  MAIN APP
 // ═══════════════════════════════════════════════════════════════════
 function SportsBoard() {
@@ -1380,7 +1484,8 @@ function SportsBoard() {
   const [r1,          setR1]          = useState(0);
   const [r2,          setR2]          = useState(1);
   const [pinnedGame,  setPinnedGame]  = useState(null);
-  const [showFavs,    setShowFavs]    = useState(false);
+  const [showFavs,       setShowFavs]       = useState(false);
+  const [showSportFilter, setShowSportFilter] = useState(false);
   const [picks,       setPicks]       = useState({});
   const [viewMode,    setViewMode]    = useState(() => {
     try { return localStorage.getItem("sb_view") || "ticker"; } catch { return "ticker"; }
@@ -1446,6 +1551,11 @@ function SportsBoard() {
       try { localStorage.setItem("sb_ticker_sports", JSON.stringify(next ? [...next] : null)); } catch {}
       return next;
     });
+  }, []);
+
+  const enableAllTickerSports = useCallback(() => {
+    setTickerSports(null);
+    try { localStorage.setItem("sb_ticker_sports", JSON.stringify(null)); } catch {}
   }, []);
 
   const prevScores = useRef({});
@@ -1636,6 +1746,14 @@ function SportsBoard() {
   };
 
   return e(Fragment,null,
+    // Sport filter panel
+    showSportFilter && e(SportFilterPanel,{
+      slots, tickerSports, allSlotKeys,
+      onToggle:    (key) => toggleTickerSport(key, allSlotKeys),
+      onEnableAll: enableAllTickerSports,
+      onClose:     () => setShowSportFilter(false),
+    }),
+
     // Favorites panel
     showFavs && e(FavPanel,{
       slots, favs,
@@ -1698,6 +1816,20 @@ function SportsBoard() {
             e("span",null, { ticker:"⊟", ticker1:"⊞", scores:"▶▶" }[viewMode] || "▶▶"),
             e("span",{style:{fontSize:10,fontWeight:900,fontFamily:F,letterSpacing:0.5}},
               { ticker:"1-ROW", ticker1:"SCORES", scores:"TICKER" }[viewMode] || "TICKER"),
+          ),
+          e("button",{
+            onClick:()=>setShowSportFilter(true),
+            title:"Filter ticker sports",
+            style:{
+              background: tickerSports ? "rgba(0,122,255,0.15)" : "rgba(255,255,255,0.06)",
+              border:"1px solid "+(tickerSports ? "rgba(0,122,255,0.4)" : "rgba(255,255,255,0.12)"),
+              borderRadius:7, cursor:"pointer", padding:"3px 8px",
+              fontSize:13, lineHeight:1, display:"flex", alignItems:"center", gap:4,
+              color: tickerSports ? "#0A84FF" : "rgba(255,255,255,0.7)",
+            },
+          },
+            e("span",null,"📺"),
+            tickerSports && e("span",{style:{fontSize:10,fontWeight:900,fontFamily:F,color:"#0A84FF"}},tickerSports.size+"/"+allSlotKeys.length),
           ),
           e("button",{
             onClick:()=>setShowFavs(true),
