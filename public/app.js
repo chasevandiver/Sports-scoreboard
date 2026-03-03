@@ -644,9 +644,10 @@ function GameCard({ game, flash, rowH, favs, onTap }) {
   };
 
   const diamond = () => {
-    const S=Math.round(LEAD*0.22);
+    const S=Math.round(LEAD*0.19);
+    const pad=Math.round(S*0.5); // padding to accommodate rotation overflow
     const b=on=>e("div",{style:{width:S,height:S,transform:"rotate(45deg)",flexShrink:0,background:on?"#F5A623":"rgba(255,255,255,0.1)",border:"1.5px solid "+(on?"#F5A623":"rgba(255,255,255,0.22)"),boxShadow:on?"0 0 5px #F5A623aa":"none"}});
-    return e("div",{style:{display:"flex",flexDirection:"column",alignItems:"center",gap:Math.round(S*0.22),paddingRight:7,borderRight:"1px solid rgba(255,255,255,0.08)",flexShrink:0}},
+    return e("div",{style:{display:"flex",flexDirection:"column",alignItems:"center",gap:Math.round(S*0.22),paddingRight:7,borderRight:"1px solid rgba(255,255,255,0.08)",flexShrink:0,overflow:"visible",padding:pad+"px "+(pad+7)+"px "+pad+"px "+pad+"px"}},
       b(game.bases[1]),
       e("div",{style:{display:"flex",gap:Math.round(S)}},b(game.bases[2]),b(game.bases[0])),
       e("div",{style:{display:"flex",gap:3,marginTop:2}},[0,1,2].map(i=>e("div",{key:i,style:{width:5,height:5,borderRadius:"50%",background:i<game.outs?"#F5A623":"rgba(255,255,255,0.12)"}})))
@@ -1216,6 +1217,12 @@ function SportsBoard() {
   const [viewMode,    setViewMode]    = useState(() => {
     try { return localStorage.getItem("sb_view") || "ticker"; } catch { return "ticker"; }
   });
+  const [tickerSports, setTickerSports] = useState(() => {
+    try {
+      const saved = localStorage.getItem("sb_ticker_sports");
+      return saved ? new Set(JSON.parse(saved)) : null; // null = all enabled
+    } catch { return null; }
+  });
   const [favs,        setFavs]        = useState(() => {
     try {
       const saved = localStorage.getItem("sb_favs");
@@ -1236,6 +1243,23 @@ function SportsBoard() {
     setViewMode(prev => {
       const next = prev === "ticker" ? "scores" : "ticker";
       try { localStorage.setItem("sb_view", next); } catch {}
+      return next;
+    });
+  }, []);
+
+  const toggleTickerSport = useCallback((key, allKeys) => {
+    setTickerSports(prev => {
+      // null means all enabled — materialize it first
+      const current = prev ? new Set(prev) : new Set(allKeys);
+      if (current.has(key)) {
+        if (current.size <= 1) return current; // keep at least one
+        current.delete(key);
+      } else {
+        current.add(key);
+      }
+      // If all are enabled, store null (default)
+      const next = current.size === allKeys.length ? null : current;
+      try { localStorage.setItem("sb_ticker_sports", JSON.stringify(next ? [...next] : null)); } catch {}
       return next;
     });
   }, []);
@@ -1336,24 +1360,34 @@ function SportsBoard() {
     return () => { cancelled=true; clearInterval(iv); };
   }, [slots.length, r1, r2]); // eslint-disable-line
 
-  // ── Wake Lock — keep screen on while ticker is visible ──────────
+  // ── Keep screen awake — invisible looping video (works on iOS Safari/PWA) ──
   useEffect(() => {
-    let lock = null;
     if (viewMode !== "ticker") return;
-    const acquire = async () => {
-      try {
-        if (navigator.wakeLock) {
-          lock = await navigator.wakeLock.request("screen");
-        }
-      } catch {}
-    };
-    acquire();
-    // Re-acquire if the page becomes visible again (e.g. switching tabs)
-    const onVisible = () => { if (document.visibilityState === "visible") acquire(); };
-    document.addEventListener("visibilitychange", onVisible);
+
+    // Create a 1x1 transparent video element and play it in a loop.
+    // iOS treats active media playback as "user is engaged" and won't sleep.
+    const vid = document.createElement("video");
+    vid.setAttribute("playsinline", "");
+    vid.setAttribute("muted", "");
+    vid.loop = true;
+    vid.style.cssText = "position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;top:0;left:0;";
+
+    // Minimal valid MP4 (1x1 black frame, ~500 bytes) as a data URI
+    vid.src = "data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAAs1tZGF0AAACrgYF//+q3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE1NSByMjkwMSA3ZDBmZjIyIC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAxOCAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiBsb29rYWhlYWRfZnJhbWVzPTUwIGJmcmFtZXM9MyBiX3B5cmFtaWQ9MiByZWxfZXg9MyBkcmVjdD0wIHdlaWdodGI9MSBvcGVuX2dvcD0wIHdlaWdodHA9MiBrZXlpbnQ9MjUwIGtleWludF9taW49MjUgc2NlbmVjdXQ9NDAgaW50cmFfcmVmcmVzaD0wIHJjX2xvb2thaGVhZD00MCByYz1jcmYgbWJ0cmVlPTEgY3JmPTI4LjAgcWNvbXA9MC42MCBxcG1pbj0wIHFwbWF4PTY5IHFwc3RlcD00IGlwX3JhdGlvPTEuNDAgYXE9MToxLjAwAIAAAAFZZYiEAD//8m+P5OXfBiu/Cae2UrCJFn5JY2e4AAADAAMAAADAD3CwCkHIRLB9AAADAQAEAAAABgWDDggAAAAKAAAAGQIPAAAAB0hYAAAHSFgAAAAOBFgAAAdHWAAAAAxhWAAAAA5AWAAAADDhWAAAABDQWAAAAFJAWAAAAHpAWAAAAMcQWAAAAIOQWAAAAJJQWAAAAJqQWAAAAKmQWAAAAMOQWAAAAPLQWAAAATkQWAAAAUqQWAAAAVwQWAAAAXOQWAAAAY8QWAAAA=";
+
+    document.body.appendChild(vid);
+    vid.play().catch(() => {});
+
+    // Also try Wake Lock API as a belt-and-suspenders backup
+    let lock = null;
+    (async () => {
+      try { if (navigator.wakeLock) lock = await navigator.wakeLock.request("screen"); } catch {}
+    })();
+
     return () => {
-      document.removeEventListener("visibilitychange", onVisible);
-      if (lock) lock.release().catch(()=>{});
+      vid.pause();
+      vid.remove();
+      if (lock) lock.release().catch(() => {});
     };
   }, [viewMode]);
 
@@ -1375,8 +1409,18 @@ function SportsBoard() {
   // ── Render ──────────────────────────────────────────────────
   const HEADER_H = 44;
   const rowH     = Math.floor((window.innerHeight - HEADER_H) / 2);
-  const slot1    = slots[r1] || null;
-  const slot2    = slots[r2] || null;
+
+  // Slots eligible for the ticker (filtered by user preference)
+  const allSlotKeys = slots.map(s => s.key);
+  const tickerSlots = tickerSports
+    ? slots.filter(s => tickerSports.has(s.key))
+    : slots;
+  // Clamp r1/r2 to tickerSlots range for display
+  const ts = tickerSlots;
+  const ti1 = Math.min(r1, Math.max(ts.length - 1, 0));
+  const ti2 = Math.min(r2, Math.max(ts.length - 1, 0));
+  const slot1    = ts[ti1] || ts[0] || null;
+  const slot2    = ts.length > 1 ? (ts[ti2 === ti1 ? (ti1 + 1) % ts.length : ti2] || null) : null;
   const spin     = { width:10,height:10,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.15)",borderTopColor:"#fff",flexShrink:0 };
 
   const renderRow = (slot, rowNum, speed) => {
@@ -1423,26 +1467,27 @@ function SportsBoard() {
       e("div",{style:{height:HEADER_H,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 12px",background:"linear-gradient(180deg,#1c1c1c,#111)",borderBottom:"1px solid rgba(255,255,255,0.07)"}},
         e("div",{style:{display:"flex",gap:4,alignItems:"center",flex:1,overflow:"hidden"}},
           slots.map((sl,i) => {
-            const isR1 = i===r1, isR2 = i===r2, active = isR1||isR2;
+            const enabled = !tickerSports || tickerSports.has(sl.key);
+            const isR1 = slot1 && slot1.key === sl.key;
+            const isR2 = slot2 && slot2.key === sl.key;
+            const showing = isR1 || isR2;
             return e("div",{
               key:sl.key,
-              onClick:()=>{
-                if (isR1||isR2) return; // already showing
-                // Replace whichever row last looped (r2 is "older" heuristic)
-                setR2(i);
-              },
+              onClick:()=> viewMode==="ticker"
+                ? toggleTickerSport(sl.key, allSlotKeys)
+                : null,
               style:{display:"flex",alignItems:"center",gap:3,padding:"2px 7px",borderRadius:20,flexShrink:0,
-                cursor:active?"default":"pointer",
-                background:active?sl.accent+"30":"rgba(255,255,255,0.04)",
-                border:"1px solid "+(active?sl.accent:"rgba(255,255,255,0.08)"),
+                cursor: viewMode==="ticker" ? "pointer" : "default",
+                background: enabled ? (showing ? sl.accent+"40" : sl.accent+"18") : "rgba(255,255,255,0.03)",
+                border:"1px solid "+(enabled ? (showing ? sl.accent : sl.accent+"66") : "rgba(255,255,255,0.06)"),
                 transition:"all 0.15s",
-                opacity:active?1:0.7,
+                opacity: enabled ? 1 : 0.35,
               }},
               e("span",{style:{fontSize:11}},sl.icon),
-              e("span",{style:{fontSize:10,fontWeight:800,fontFamily:F,letterSpacing:1,color:active?"#fff":"rgba(255,255,255,0.35)"}},sl.isCBB?sl.shortLabel:sl.label),
-              e("span",{style:{fontSize:9,color:active?"rgba(255,255,255,0.5)":"rgba(255,255,255,0.16)"}}," "+sl.games.length),
-              isR1&&e("span",{style:{fontSize:8,marginLeft:2,color:sl.accent,fontWeight:900,fontFamily:F}},"▲"),
-              isR2&&e("span",{style:{fontSize:8,marginLeft:2,color:sl.accent,fontWeight:900,fontFamily:F}},"▼"),
+              e("span",{style:{fontSize:10,fontWeight:800,fontFamily:F,letterSpacing:1,color:enabled?"#fff":"rgba(255,255,255,0.3)"}},sl.isCBB?sl.shortLabel:sl.label),
+              e("span",{style:{fontSize:9,color:enabled?"rgba(255,255,255,0.45)":"rgba(255,255,255,0.12)"}}," "+sl.games.length),
+              isR1&&enabled&&e("span",{style:{fontSize:8,marginLeft:2,color:sl.accent,fontWeight:900,fontFamily:F}},"▲"),
+              isR2&&enabled&&e("span",{style:{fontSize:8,marginLeft:2,color:sl.accent,fontWeight:900,fontFamily:F}},"▼"),
             );
           }),
           loading&&e("div",{className:"spin",style:spin}),
