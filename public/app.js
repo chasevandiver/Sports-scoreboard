@@ -703,22 +703,14 @@ function GameCard({ game, flash, rowH, favs, onTap }) {
             return e("span",{style:{fontSize:Math.round(LEAD*0.18),flexShrink:0}},"🧠");
           })(),
           e("div",{style:{flex:1,minWidth:0,overflow:"hidden"}},
-            // Pick team + confidence
+            // PICK: EWU -3.5 (64%)
             e("div",{style:{display:"flex",alignItems:"baseline",gap:4,overflow:"hidden"}},
-              e("span",{style:{fontSize:Math.round(LEAD*0.13),fontWeight:900,color:"rgba(255,255,255,0.45)",fontFamily:F,letterSpacing:0.5,flexShrink:0}},"PICK"),
-              e("span",{style:{fontSize:Math.round(LEAD*0.17),fontWeight:900,color:"#fff",fontFamily:F,letterSpacing:0.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},pick.pick_abbr),
-              e("span",{style:{fontSize:Math.round(LEAD*0.12),color:"rgba(255,255,255,0.4)",fontFamily:F,flexShrink:0}},Math.round(pick.confidence)+"%"),
-            ),
-            // Model spread vs market spread
-            e("div",{style:{display:"flex",alignItems:"baseline",gap:5,marginTop:Math.round(LEAD*0.03),overflow:"hidden"}},
-              e("span",{style:{fontSize:Math.round(LEAD*0.11),color:"rgba(255,255,255,0.35)",fontFamily:F,flexShrink:0}},"MDL"),
-              e("span",{style:{fontSize:Math.round(LEAD*0.14),fontWeight:900,color:"#7EB8F7",fontFamily:F,fontVariantNumeric:"tabular-nums",flexShrink:0}},
+              e("span",{style:{fontSize:Math.round(LEAD*0.13),fontWeight:900,color:"rgba(255,255,255,0.45)",fontFamily:F,letterSpacing:0.5,flexShrink:0}},"PICK:"),
+              e("span",{style:{fontSize:Math.round(LEAD*0.17),fontWeight:900,color:"#fff",fontFamily:F,letterSpacing:0.5,flexShrink:0}},pick.pick_abbr),
+              e("span",{style:{fontSize:Math.round(LEAD*0.15),fontWeight:900,color:"#7EB8F7",fontFamily:F,fontVariantNumeric:"tabular-nums",flexShrink:0}},
                 (pick.predicted_spread>0?"+":"")+pick.predicted_spread.toFixed(1)),
-              e("span",{style:{fontSize:Math.round(LEAD*0.11),color:"rgba(255,255,255,0.2)",fontFamily:F,flexShrink:0}},"MKT"),
-              e("span",{style:{fontSize:Math.round(LEAD*0.14),fontWeight:900,color:"rgba(255,255,255,0.55)",fontFamily:F,fontVariantNumeric:"tabular-nums",flexShrink:0}},
-                pick.market&&pick.market.spread!=null
-                  ? (pick.market.spread>0?"+":"")+pick.market.spread
-                  : "—"),
+              e("span",{style:{fontSize:Math.round(LEAD*0.12),color:"rgba(255,255,255,0.35)",fontFamily:F,flexShrink:0}},
+                "("+Math.round(pick.confidence)+"%)"),
             ),
           ),
           // Edge pill
@@ -930,20 +922,17 @@ function ScoreRow({ game, favs, onTap }) {
 
         // Pick badge
         pick
-          ? e("div",{style:{display:"flex",alignItems:"center",gap:4}},
+          ? e("div",{style:{display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}},
               e("span",{style:{fontSize:12}}, pickResult || "🧠"),
+              e("span",{style:{fontSize:12,fontWeight:900,color:"rgba(255,255,255,0.4)",fontFamily:F}},"PICK:"),
               e("span",{style:{
                 fontSize:13,fontWeight:900,fontFamily:F,letterSpacing:0.5,
-                color: pickResult==="✅"?"#30D158" : pickResult==="❌"?"#FF453A" : "#7EB8F7",
+                color: pickResult==="✅"?"#30D158" : pickResult==="❌"?"#FF453A" : "#fff",
               }}, pick.pick_abbr),
-              e("span",{style:{fontSize:11,color:"rgba(255,255,255,0.35)",fontFamily:F}},
-                Math.round(pick.confidence)+"%"),
-              pick.model_vs_market && Math.abs(pick.model_vs_market.spread_edge)>=2 &&
-                e("span",{style:{
-                  fontSize:11,fontWeight:900,fontFamily:F,
-                  color:pick.model_vs_market.spread_edge>0?"#30D158":"#FF453A",
-                  marginLeft:2,
-                }}, (pick.model_vs_market.spread_edge>0?"+":"")+pick.model_vs_market.spread_edge.toFixed(1)),
+              e("span",{style:{fontSize:13,fontWeight:900,color:"#7EB8F7",fontFamily:F,fontVariantNumeric:"tabular-nums"}},
+                (pick.predicted_spread>0?"+":"")+pick.predicted_spread.toFixed(1)),
+              e("span",{style:{fontSize:12,color:"rgba(255,255,255,0.35)",fontFamily:F}},
+                "("+Math.round(pick.confidence)+"%)"),
             )
           : null,
       ),
@@ -1334,6 +1323,27 @@ function SportsBoard() {
     const iv = setInterval(load, 65000);
     return () => { cancelled=true; clearInterval(iv); };
   }, [slots.length, r1, r2]); // eslint-disable-line
+
+  // ── Wake Lock — keep screen on while ticker is visible ──────────
+  useEffect(() => {
+    let lock = null;
+    if (viewMode !== "ticker") return;
+    const acquire = async () => {
+      try {
+        if (navigator.wakeLock) {
+          lock = await navigator.wakeLock.request("screen");
+        }
+      } catch {}
+    };
+    acquire();
+    // Re-acquire if the page becomes visible again (e.g. switching tabs)
+    const onVisible = () => { if (document.visibilityState === "visible") acquire(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      if (lock) lock.release().catch(()=>{});
+    };
+  }, [viewMode]);
 
   // Rotation
   const handleLoop = useCallback((rowNum) => {
