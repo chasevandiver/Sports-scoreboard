@@ -197,6 +197,16 @@ function groupCBBByConf(games) {
       confName, games:gs,
     }));
 }
+function getTop25Slot(games) {
+  const ranked = games.filter(g => g.home.rank !== null || g.away.rank !== null);
+  if (!ranked.length) return null;
+  return {
+    key: "cbb_top25",
+    label:"CBB", shortLabel:"Top 25", icon:"🏀", accent:"#C9500A",
+    isCBB:true, sport:"basketball", league:"mens-college-basketball",
+    confName:"Top 25", games:ranked,
+  };
+}
 
 // ── PARSE LEADERS ─────────────────────────────────────────────────
 function parseLeaders(summary) {
@@ -1715,8 +1725,10 @@ function SportsBoard() {
           .map(g=>({...g, leaders:prevLeaders[g.id]||g.leaders, pick:picksMap[g.id]||null }));
         allGames.forEach(g=>{prevScores.current[g.id]={home:g.home.score,away:g.away.score};});
         const confSlots = groupCBBByConf(allGames);
+        const top25Slot = getTop25Slot(allGames);
+        const allCBBSlots = top25Slot ? [top25Slot, ...confSlots] : confSlots;
         const nbaIdx = nextSlots.findIndex(s=>s.key==="nba");
-        nextSlots.splice(nbaIdx>=0?nbaIdx+1:nextSlots.length, 0, ...confSlots);
+        nextSlots.splice(nbaIdx>=0?nbaIdx+1:nextSlots.length, 0, ...allCBBSlots);
       } catch(err) { console.warn("[CBB]",err.message); }
 
       // Sort games within each slot: live → final → pre, favorites first within group
