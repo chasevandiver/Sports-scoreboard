@@ -10,13 +10,19 @@ const path    = require("path");
 const app     = express();
 const PORT    = process.env.PORT || 3000;
 
-const MAX_RESPONSE_BYTES = 1.5 * 1024 * 1024; // 1.5 MB hard cap per request
+// Scoreboard requests stay small; game summaries include pitch-by-pitch data
+// for baseball which can reach 5-8 MB, so use a generous cap there.
+const SCOREBOARD_MAX = 1.5 * 1024 * 1024; //  1.5 MB — scoreboard / CBB lists
+const SUMMARY_MAX    = 10  * 1024 * 1024; // 10   MB — per-game summaries
 
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/api/espn", (req, res) => {
   const espnPath = req.query.path;
   if (!espnPath) return res.status(400).json({ error: "Missing path param" });
+
+  const isSummary = espnPath.includes("summary");
+  const MAX_RESPONSE_BYTES = isSummary ? SUMMARY_MAX : SCOREBOARD_MAX;
 
   const url = "https://site.api.espn.com/apis/site/v2/sports/" + espnPath;
   console.log("[PROXY] →", espnPath);
@@ -33,13 +39,15 @@ app.get("/api/espn", (req, res) => {
     espnRes.on("data", (chunk) => {
       bytesSeen += chunk.length;
       if (bytesSeen > MAX_RESPONSE_BYTES) {
-        // Response is too large — destroy the upstream and bail
         aborted = true;
         espnRes.destroy();
+        console.warn("[PROXY] ✗ TOO LARGE:", espnPath, Math.round(bytesSeen/1024)+"kb");
+        // Always end the response so the client doesn't hang waiting for more data.
         if (!res.headersSent) {
           res.status(413).json({ error: "ESPN response too large ("+Math.round(bytesSeen/1024)+"kb)" });
+        } else {
+          res.end(); // partial JSON — client will get a parse error, not a timeout
         }
-        console.warn("[PROXY] ✗ TOO LARGE:", espnPath, Math.round(bytesSeen/1024)+"kb");
         return;
       }
       if (!aborted) res.write(chunk);
