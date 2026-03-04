@@ -1571,10 +1571,12 @@ function SportsBoard() {
     try {
       const nextSlots = [];
 
-      const prevLeaders = {};
+      const prevLeaders  = {};
+      const prevPitchers = {};
       slotsRef.current.forEach(sl => {
         (sl.games||[]).forEach(g => {
           if (g.leaders&&(g.leaders.home.length||g.leaders.away.length)) prevLeaders[g.id]=g.leaders;
+          if (g.pitchers&&(g.pitchers.home||g.pitchers.away)) prevPitchers[g.id]=g.pitchers;
         });
       });
 
@@ -1592,7 +1594,7 @@ function SportsBoard() {
         if (r.status!=="fulfilled") return;
         const {lg,events}=r.value;
         const games = events.map(ev=>parseGame(ev,lg.sport,lg.league)).filter(Boolean)
-          .map(g=>({...g,leaders:prevLeaders[g.id]||g.leaders}));
+          .map(g=>({...g,leaders:prevLeaders[g.id]||g.leaders,...(prevPitchers[g.id]?{pitchers:prevPitchers[g.id]}:{})}));
         games.forEach(g=>{prevScores.current[g.id]={home:g.home.score,away:g.away.score};});
         if (games.length>0) nextSlots.push({key:lg.key,label:lg.label,icon:lg.icon,accent:lg.accent,isCBB:false,sport:lg.sport,league:lg.league,games});
       });
