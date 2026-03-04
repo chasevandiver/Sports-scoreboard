@@ -687,7 +687,20 @@ function pickCoveredSpread(pick, game) {
     if (pick.home_abbr) isHome = pick.pick === pick.home_abbr;
     if (pick.away_abbr) isAway = pick.pick === pick.away_abbr;
   }
-  if (!isHome && !isAway) return false;
+  if (!isHome && !isAway) {
+    // DEBUG: log the pick object so we can identify the format mismatch
+    console.warn("[CBB grade] team match failed", {
+      "pick.pick": pick.pick,
+      "pick.pick_abbr": pick.pick_abbr,
+      "pick.home_abbr": pick.home_abbr,
+      "pick.away_abbr": pick.away_abbr,
+      "game.home.abbr": game.home.abbr,
+      "game.away.abbr": game.away.abbr,
+      "pick.market": pick.market,
+      fullPick: pick,
+    });
+    return false;
+  }
   const diff = isHome
     ? (game.home.score||0) - (game.away.score||0)
     : (game.away.score||0) - (game.home.score||0);
