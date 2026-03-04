@@ -660,7 +660,7 @@ function pickSpreadLabel(pick) {
   const mkt = pick.market.spread;
   const holder = (pick.market.spread_holder || "").trim();
   // If the spread_holder matches the pick, use as-is; otherwise flip
-  const val = holder === pick.pick_abbr || holder === pick.pick ? mkt : -mkt;
+  const val = holder === pick.pick ? mkt : -mkt;
   return (val > 0 ? "+" : "") + val;
 }
 
@@ -669,7 +669,7 @@ function pickSpreadValue(pick) {
   if (!pick || !pick.market || pick.market.spread == null) return null;
   const mkt = pick.market.spread;
   const holder = (pick.market.spread_holder || "").trim();
-  return holder === pick.pick_abbr || holder === pick.pick ? mkt : -mkt;
+  return holder === pick.pick ? mkt : -mkt;
 }
 
 // Did the picked team cover the spread?
