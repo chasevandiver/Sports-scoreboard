@@ -210,7 +210,7 @@ function parseLeaders(summary) {
       const side  = grp.team&&grp.team.id===homeId ? "home" : "away";
       const stats = (grp.statistics||[])[0];
       if (!stats) return;
-      const lb=stats.labels||[];
+      const lb=stats.labels||stats.keys||[];
       const pi=lb.indexOf("PTS"),gi=lb.indexOf("G"),ri=lb.indexOf("REB"),ai=lb.indexOf("AST");
       const si=pi>=0?pi:gi>=0?gi:0;
       result[side] = (stats.athletes||[])
@@ -1725,11 +1725,16 @@ function SportsBoard() {
     if (!slots.length) return;
     let cancelled = false;
     const load = async () => {
-      // In scores view, also load leaders for all slots (first 4 to cap API calls)
-      const visible = viewMode === "scores"
-        ? slots.slice(0, 4)
-        : [slots[r1], slots[r2]].filter(Boolean);
-      for (const slot of visible) {
+      // Always load all pro sports (NBA/MLB/NHL) so stats are never gated on ticker rotation.
+      // For CBB (many slots), only load whichever conferences are currently visible.
+      const all = slotsRef.current;
+      const visKeys = new Set(
+        viewMode === "scores"
+          ? all.slice(0, 4).map(s => s.key)
+          : [all[r1], all[r2]].filter(Boolean).map(s => s.key)
+      );
+      const toLoad = all.filter(s => !s.isCBB || visKeys.has(s.key));
+      for (const slot of toLoad) {
         for (const g of slot.games.filter(g=>g.status!=="pre")) {
           if (cancelled) return;
           try {
