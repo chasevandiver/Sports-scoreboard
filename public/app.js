@@ -515,8 +515,8 @@ function DetailPanel({ game, sport, league, favs, onToggleFav, onClose }) {
           ),
           // Result badge if final
           game.status==="final" && (() => {
-            const pickWon = (pick.pick_abbr===game.home.abbr&&(game.home.score||0)>(game.away.score||0))
-                          ||(pick.pick_abbr===game.away.abbr&&(game.away.score||0)>(game.home.score||0));
+            const pickWon = (pick.pick===game.home.abbr&&(game.home.score||0)>(game.away.score||0))
+                          ||(pick.pick===game.away.abbr&&(game.away.score||0)>(game.home.score||0));
             return e("div",{style:{
               padding:"3px 10px", borderRadius:6, fontWeight:900, fontSize:13,
               fontFamily:F, letterSpacing:1,
@@ -535,13 +535,13 @@ function DetailPanel({ game, sport, league, favs, onToggleFav, onClose }) {
         // Main pick row
         e("div",{style:{padding:"12px 14px",display:"flex",alignItems:"center",gap:16}},
           // Pick team logo
-          pick.pick_abbr===game.home.abbr
+          pick.pick===game.home.abbr
             ? (game.home.logo&&e("img",{src:game.home.logo,width:44,height:44,style:{objectFit:"contain",filter:"drop-shadow(0 1px 6px rgba(0,0,0,0.8))",flexShrink:0}}))
             : (game.away.logo&&e("img",{src:game.away.logo,width:44,height:44,style:{objectFit:"contain",filter:"drop-shadow(0 1px 6px rgba(0,0,0,0.8))",flexShrink:0}})),
 
           e("div",{style:{flex:1}},
             e("div",{style:{fontSize:22,fontWeight:900,fontFamily:F,color:"#fff",letterSpacing:0.5}},
-              pick.pick_abbr),
+              pick.pick),
             e("div",{style:{fontSize:13,color:"rgba(255,255,255,0.4)",fontFamily:F,marginTop:2}},
               "to win"),
           ),
@@ -818,8 +818,8 @@ function GameCard({ game, flash, rowH, favs, onTap }) {
           // Pick result indicator (after game ends)
           (() => {
             if (game.status==="final") {
-              const pickWon = (pick.pick_abbr===game.home.abbr&&(game.home.score||0)>(game.away.score||0))
-                            ||(pick.pick_abbr===game.away.abbr&&(game.away.score||0)>(game.home.score||0));
+              const pickWon = (pick.pick===game.home.abbr&&(game.home.score||0)>(game.away.score||0))
+                            ||(pick.pick===game.away.abbr&&(game.away.score||0)>(game.home.score||0));
               return e("span",{style:{fontSize:Math.round(LEAD*0.22),flexShrink:0}}, pickWon?"✅":"❌");
             }
             return e("span",{style:{fontSize:Math.round(LEAD*0.18),flexShrink:0}},"🧠");
@@ -828,7 +828,7 @@ function GameCard({ game, flash, rowH, favs, onTap }) {
             // PICK: EWU -3.5 (64%)
             e("div",{style:{display:"flex",alignItems:"baseline",gap:4,overflow:"hidden"}},
               e("span",{style:{fontSize:Math.round(LEAD*0.13),fontWeight:900,color:"rgba(255,255,255,0.45)",fontFamily:F,letterSpacing:0.5,flexShrink:0}},"PICK:"),
-              e("span",{style:{fontSize:Math.round(LEAD*0.17),fontWeight:900,color:"#fff",fontFamily:F,letterSpacing:0.5,flexShrink:0}},pick.pick_abbr),
+              e("span",{style:{fontSize:Math.round(LEAD*0.17),fontWeight:900,color:"#fff",fontFamily:F,letterSpacing:0.5,flexShrink:0}},pick.pick),
               pickSpreadLabel(pick)&&e("span",{style:{fontSize:Math.round(LEAD*0.15),fontWeight:900,color:"rgba(255,255,255,0.65)",fontFamily:F,fontVariantNumeric:"tabular-nums",flexShrink:0}},
                 pickSpreadLabel(pick)),
               e("span",{style:{fontSize:Math.round(LEAD*0.12),color:"rgba(255,255,255,0.35)",fontFamily:F,flexShrink:0}},
@@ -996,7 +996,7 @@ function ScoreRow({ game, favs, onTap }) {
   // Pick result
   let pickResult = null;
   if (pick && isFinal) {
-    const won = (pick.pick_abbr===game.home.abbr && hw) || (pick.pick_abbr===game.away.abbr && aw);
+    const won = (pick.pick===game.home.abbr && hw) || (pick.pick===game.away.abbr && aw);
     pickResult = won ? "✅" : "❌";
   }
 
@@ -1163,7 +1163,7 @@ function ScoreRow({ game, favs, onTap }) {
               e("span",{style:{
                 fontSize:statFz,fontWeight:900,fontFamily:F,letterSpacing:0.5,
                 color: pickResult==="✅"?"#30D158" : pickResult==="❌"?"#FF453A" : "#fff",
-              }}, pick.pick_abbr),
+              }}, pick.pick),
               pickSpreadLabel(pick)&&e("span",{style:{fontSize:statFz,fontWeight:900,color:"rgba(255,255,255,0.65)",fontFamily:F,fontVariantNumeric:"tabular-nums"}},
                 pickSpreadLabel(pick)),
               e("span",{style:{fontSize:smallFz,color:"rgba(255,255,255,0.35)",fontFamily:F}},
