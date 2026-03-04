@@ -1747,7 +1747,7 @@ function SportsBoard() {
               })});
               slotsRef.current=next; return next;
             });
-          } catch {}
+          } catch(err) { console.warn("[leaders]", slot.sport, g.id, err.message); }
           await new Promise(r=>setTimeout(r,400));
         }
       }
