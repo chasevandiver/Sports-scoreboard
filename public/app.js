@@ -171,7 +171,8 @@ function parseGame(ev, sport, league) {
       bases: sit ? [!!sit.onFirst, !!sit.onSecond, !!sit.onThird] : [false,false,false],
       outs:  (sit && sit.outs) || 0,
       leaders: { home:[], away:[] },
-      pitchers: { home: null, away: null },
+      pitchers: { home: null, away: null, win: null, loss: null, save: null },
+      hitters:  { home: [], away: [] },
       alert: null,
       detail: null,   // loaded on tap
     };
@@ -237,38 +238,77 @@ function parseLeaders(summary) {
   } catch { return {home:[],away:[]}; }
 }
 
-// ── PARSE PITCHERS (baseball only) ────────────────────────────────
-function parsePitchers(summary) {
+// ── PARSE BASEBALL STATS (pitching decisions + top hitters) ───────
+function parseBaseballStats(summary) {
   try {
-    const result = { home: null, away: null };
+    const out = {
+      pitchers: { home:null, away:null, win:null, loss:null, save:null },
+      hitters:  { home:[], away:[] },
+    };
     const hc = ((summary.header&&summary.header.competitions&&summary.header.competitions[0])||{}).competitors||[];
     const homeId = (hc.find(c=>c.homeAway==="home")||{team:{}}).team.id;
     const bs = summary && summary.boxscore;
-    if (!bs) return result;
+    if (!bs) return out;
+
     (bs.players||[]).forEach(grp => {
       const side = grp.team&&grp.team.id===homeId ? "home" : "away";
-      const pitchStats = (grp.statistics||[]).find(s =>
-        (s.labels||[]).includes("IP") || (s.name||"").toLowerCase().includes("pitch")
-      );
-      if (!pitchStats) return;
-      const lb  = pitchStats.labels || [];
-      const ipI = lb.indexOf("IP");
-      const erI = lb.indexOf("ER");
-      const kI  = lb.indexOf("K");
-      const active = (pitchStats.athletes||[]).filter(a =>
-        a.stats && a.stats.some(s => s !== "--" && s !== "0.0" && s !== "0")
-      );
-      if (!active.length) return;
-      const p = active[active.length - 1]; // last/current pitcher
-      result[side] = {
-        name: (p.athlete&&(p.athlete.shortName||p.athlete.displayName))||"—",
-        ip:   ipI>=0&&p.stats[ipI]&&p.stats[ipI]!=="--" ? p.stats[ipI] : "0",
-        er:   erI>=0&&p.stats[erI]&&p.stats[erI]!=="--" ? p.stats[erI] : "0",
-        k:    kI>=0&&p.stats[kI]&&p.stats[kI]!=="--"   ? p.stats[kI]  : "0",
-      };
+
+      // ── Pitching ──
+      const pitchGrp = (grp.statistics||[]).find(s => {
+        const lb = s.labels || s.keys || [];
+        return lb.includes("IP") || (s.name||"").toLowerCase().includes("pitch");
+      });
+      if (pitchGrp) {
+        const lb  = pitchGrp.labels || pitchGrp.keys || [];
+        const ipI = lb.indexOf("IP");
+        const erI = lb.indexOf("ER");
+        const kI  = lb.indexOf("K") >= 0 ? lb.indexOf("K") : lb.indexOf("SO");
+        const list = (pitchGrp.athletes||[]).map(a => {
+          if (!a.stats) return null;
+          const ip = ipI >= 0 ? a.stats[ipI] : null;
+          if (!ip || ip === "--" || parseFloat(ip) === 0) return null;
+          return {
+            name:    (a.athlete&&(a.athlete.shortName||a.athlete.displayName))||"—",
+            ip, starter: !!a.starter, note: a.note || null,
+            er: erI >= 0 && a.stats[erI] !== "--" ? a.stats[erI] : "0",
+            k:  kI  >= 0 && a.stats[kI]  !== "--" ? a.stats[kI]  : "0",
+          };
+        }).filter(Boolean);
+        if (list.length) out.pitchers[side] = list[list.length - 1];
+        // Extract W / L / SV from athlete note strings (e.g. "W, 3-1" "L, 2-3" "S, 5")
+        list.forEach(p => {
+          if (!p.note) return;
+          const n = p.note.toUpperCase().trimStart();
+          if (!out.pitchers.win  && n[0]==="W" && (n[1]===","||n[1]===" "||n.length===1)) out.pitchers.win  = p;
+          if (!out.pitchers.loss && n[0]==="L" && (n[1]===","||n[1]===" "||n.length===1)) out.pitchers.loss = p;
+          if (!out.pitchers.save && (n.startsWith("SV")||n.startsWith("S,")||n.startsWith("S ")||n==="S"))  out.pitchers.save = p;
+        });
+      }
+
+      // ── Batting ──
+      const batGrp = (grp.statistics||[]).find(s => {
+        const lb = s.labels || s.keys || [];
+        return lb.includes("AB") || (s.name||"").toLowerCase().includes("bat");
+      });
+      if (batGrp) {
+        const lb   = batGrp.labels || batGrp.keys || [];
+        const abI  = lb.indexOf("AB"), hI = lb.indexOf("H");
+        const rbiI = lb.indexOf("RBI"), hrI = lb.indexOf("HR");
+        const list = (batGrp.athletes||[]).map(a => {
+          if (!a.stats) return null;
+          const h   = hI   >= 0 ? (parseInt(a.stats[hI])   || 0) : 0;
+          const rbi = rbiI >= 0 ? (parseInt(a.stats[rbiI]) || 0) : 0;
+          const hr  = hrI  >= 0 ? (parseInt(a.stats[hrI])  || 0) : 0;
+          const ab  = abI  >= 0 ? (parseInt(a.stats[abI])  || 0) : 0;
+          if (!h && !rbi && !hr) return null;
+          return { name:(a.athlete&&(a.athlete.shortName||a.athlete.displayName))||"—", ab, h, rbi, hr };
+        }).filter(Boolean);
+        list.sort((a,b)=>(b.hr-a.hr)||(b.rbi-a.rbi)||(b.h-a.h));
+        out.hitters[side] = list.slice(0, 1);
+      }
     });
-    return result;
-  } catch { return { home: null, away: null }; }
+    return out;
+  } catch { return { pitchers:{home:null,away:null,win:null,loss:null,save:null}, hitters:{home:[],away:[]} }; }
 }
 
 // ── PARSE DETAIL (box score + play by play) ───────────────────────
@@ -678,23 +718,39 @@ function GameCard({ game, flash, rowH, favs, onTap }) {
     );
   };
 
-  const pitcherCol = side => {
+  // Baseball: live column — current pitcher + top hitter stacked
+  const pitcherHitterCol = (side, pitcher, topHitter) => {
     const t = game[side];
-    const p = game.pitchers && game.pitchers[side];
     return e("div",{style:{flex:1,minWidth:0,overflow:"hidden"}},
-      e("div",{style:{fontSize:lhFz,fontWeight:800,letterSpacing:1,color:t.color,textTransform:"uppercase",fontFamily:F,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:Math.round(LEAD*0.04)}},t.abbr),
-      p
+      e("div",{style:{fontSize:lhFz,fontWeight:800,letterSpacing:1,color:t.color,textTransform:"uppercase",fontFamily:F,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:Math.round(LEAD*0.03)}},t.abbr),
+      pitcher
         ? e("div",{style:{overflow:"hidden"}},
-            e("div",{style:{fontSize:lnFz,fontWeight:700,color:"rgba(255,255,255,0.82)",fontFamily:F,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginBottom:Math.round(LEAD*0.02)}},p.name),
-            e("div",{style:{display:"flex",gap:4,alignItems:"baseline"}},
-              e("span",{style:{fontSize:lpFz,fontWeight:900,color:"#fff",fontFamily:F,fontVariantNumeric:"tabular-nums"}},p.ip+" IP"),
-              p.er!=="0"&&e("span",{style:{fontSize:lsFz,color:"rgba(255,255,255,0.38)"}},p.er+"ER"),
-              e("span",{style:{fontSize:lsFz,color:"rgba(255,255,255,0.38)"}},p.k+"K"),
+            e("div",{style:{display:"flex",alignItems:"baseline",gap:3,marginBottom:Math.round(LEAD*0.02),overflow:"hidden"}},
+              e("span",{style:{fontSize:lnFz,fontWeight:700,color:"rgba(255,255,255,0.85)",fontFamily:F,flex:"1 1 0",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},pitcher.name),
+              e("span",{style:{fontSize:lsFz,fontWeight:900,color:"#fff",fontFamily:F,fontVariantNumeric:"tabular-nums",flexShrink:0}},pitcher.ip+" IP"),
+              pitcher.er!=="0"&&e("span",{style:{fontSize:lsFz,color:"rgba(255,255,255,0.38)",flexShrink:0}},pitcher.er+"ER"),
+              e("span",{style:{fontSize:lsFz,color:"rgba(255,255,255,0.38)",flexShrink:0}},pitcher.k+"K"),
+            ),
+            topHitter&&e("div",{style:{display:"flex",alignItems:"baseline",gap:3,overflow:"hidden"}},
+              e("span",{style:{fontSize:lnFz,fontWeight:700,color:"rgba(255,255,255,0.55)",fontFamily:F,flex:"1 1 0",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},topHitter.name),
+              e("span",{style:{fontSize:lpFz,fontWeight:900,color:"#fff",fontFamily:F,fontVariantNumeric:"tabular-nums",flexShrink:0}},topHitter.h+"-"+topHitter.ab),
+              topHitter.hr>0&&e("span",{style:{fontSize:lsFz,color:"rgba(255,255,255,0.38)",flexShrink:0}},"HR"),
+              topHitter.rbi>0&&e("span",{style:{fontSize:lsFz,color:"rgba(255,255,255,0.38)",flexShrink:0}},topHitter.rbi+" RBI"),
             ),
           )
         : e("span",{style:{fontSize:lnFz,color:"rgba(255,255,255,0.15)",fontStyle:"italic"}},"—"),
     );
   };
+
+  // Baseball: final game decision row (W / L / SV)
+  const decisionRow = (label, color, p) =>
+    e("div",{style:{display:"flex",alignItems:"baseline",gap:4,overflow:"hidden",marginBottom:Math.round(LEAD*0.05)}},
+      e("span",{style:{fontSize:lsFz,fontWeight:900,color,fontFamily:F,letterSpacing:0.5,flexShrink:0,minWidth:Math.round(lsFz*2.4),textAlign:"center"}},label),
+      e("span",{style:{fontSize:lnFz,fontWeight:700,color:"rgba(255,255,255,0.82)",fontFamily:F,flex:"1 1 0",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},p.name),
+      e("span",{style:{fontSize:lsFz,fontWeight:700,color:"#fff",fontFamily:F,fontVariantNumeric:"tabular-nums",flexShrink:0}},p.ip+" IP"),
+      p.er!=="0"&&e("span",{style:{fontSize:lsFz,color:"rgba(255,255,255,0.38)",flexShrink:0}},p.er+"ER"),
+      e("span",{style:{fontSize:lsFz,color:"rgba(255,255,255,0.38)",flexShrink:0}},p.k+"K"),
+    );
 
   const diamond = () => {
     const S=Math.round(LEAD*0.19);
@@ -786,11 +842,43 @@ function GameCard({ game, flash, rowH, favs, onTap }) {
                 "EDGE "+(pick.model_vs_market.spread_edge>0?"+":"")+pick.model_vs_market.spread_edge.toFixed(1)),
             ),
         )
+      : game.sport==="baseball"
+      ? (() => {
+          const pp = game.pitchers || {};
+          const ht = game.hitters  || { home:[], away:[] };
+          // Final game with W/L data: decision rows + top hitters
+          if (isFinal && (pp.win || pp.loss)) {
+            const topH = [(ht.away||[])[0], (ht.home||[])[0]].filter(Boolean);
+            return e("div",{style:{height:LEAD,flexShrink:0,overflow:"hidden",borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:Math.round(LEAD*0.06)}},
+              pp.win  && decisionRow("W",  "#30D158", pp.win),
+              pp.loss && decisionRow("L",  "#FF453A", pp.loss),
+              pp.save && decisionRow("SV", "#0A84FF", pp.save),
+              topH.length>0 && e("div",{style:{display:"flex",gap:8,marginTop:Math.round(LEAD*0.04),overflow:"hidden"}},
+                topH.map((h,i)=>{
+                  const side = i===0?"away":"home";
+                  return e("div",{key:i,style:{flex:1,minWidth:0,display:"flex",alignItems:"baseline",gap:3,overflow:"hidden"}},
+                    e("span",{style:{fontSize:lsFz,fontWeight:900,color:game[side].color,fontFamily:F,flexShrink:0}},game[side].abbr+" "),
+                    e("span",{style:{fontSize:lnFz,fontWeight:700,color:"rgba(255,255,255,0.7)",fontFamily:F,flex:"1 1 0",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},h.name),
+                    e("span",{style:{fontSize:lpFz,fontWeight:900,color:"#fff",fontFamily:F,fontVariantNumeric:"tabular-nums",flexShrink:0}},h.h+"-"+h.ab),
+                    h.hr>0&&e("span",{style:{fontSize:lsFz,color:"rgba(255,255,255,0.38)",flexShrink:0}},"HR"),
+                    h.rbi>0&&e("span",{style:{fontSize:lsFz,color:"rgba(255,255,255,0.38)",flexShrink:0}},h.rbi+" RBI"),
+                  );
+                }),
+              ),
+            );
+          }
+          // Live / pre / final without decision data yet: diamond + current pitcher + top hitter
+          return e("div",{style:{height:LEAD,flexShrink:0,display:"flex",gap:6,overflow:"hidden",borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:Math.round(LEAD*0.06)}},
+            !isPre&&diamond(),
+            pitcherHitterCol("away", pp.away, (ht.away||[])[0]),
+            e("div",{style:{width:1,background:"rgba(255,255,255,0.07)",alignSelf:"stretch",flexShrink:0}}),
+            pitcherHitterCol("home", pp.home, (ht.home||[])[0]),
+          );
+        })()
       : e("div",{style:{height:LEAD,flexShrink:0,display:"flex",gap:6,overflow:"hidden",borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:Math.round(LEAD*0.06)}},
-          game.sport==="baseball"&&!isPre&&diamond(),
-          game.sport==="baseball" ? pitcherCol("away") : leadCol("away"),
+          leadCol("away"),
           e("div",{style:{width:1,background:"rgba(255,255,255,0.07)",alignSelf:"stretch",flexShrink:0}}),
-          game.sport==="baseball" ? pitcherCol("home") : leadCol("home"),
+          leadCol("home"),
         ),
   );
 }
@@ -1573,10 +1661,12 @@ function SportsBoard() {
 
       const prevLeaders  = {};
       const prevPitchers = {};
+      const prevHitters  = {};
       slotsRef.current.forEach(sl => {
         (sl.games||[]).forEach(g => {
           if (g.leaders&&(g.leaders.home.length||g.leaders.away.length)) prevLeaders[g.id]=g.leaders;
-          if (g.pitchers&&(g.pitchers.home||g.pitchers.away)) prevPitchers[g.id]=g.pitchers;
+          if (g.pitchers&&(g.pitchers.home||g.pitchers.away||g.pitchers.win)) prevPitchers[g.id]=g.pitchers;
+          if (g.hitters&&(g.hitters.home.length||g.hitters.away.length)) prevHitters[g.id]=g.hitters;
         });
       });
 
@@ -1594,7 +1684,7 @@ function SportsBoard() {
         if (r.status!=="fulfilled") return;
         const {lg,events}=r.value;
         const games = events.map(ev=>parseGame(ev,lg.sport,lg.league)).filter(Boolean)
-          .map(g=>({...g,leaders:prevLeaders[g.id]||g.leaders,...(prevPitchers[g.id]?{pitchers:prevPitchers[g.id]}:{})}));
+          .map(g=>({...g,leaders:prevLeaders[g.id]||g.leaders,...(prevPitchers[g.id]?{pitchers:prevPitchers[g.id]}:{}),...(prevHitters[g.id]?{hitters:prevHitters[g.id]}:{})}));
         games.forEach(g=>{prevScores.current[g.id]={home:g.home.score,away:g.away.score};});
         if (games.length>0) nextSlots.push({key:lg.key,label:lg.label,icon:lg.icon,accent:lg.accent,isCBB:false,sport:lg.sport,league:lg.league,games});
       });
@@ -1644,11 +1734,11 @@ function SportsBoard() {
           if (cancelled) return;
           try {
             const s = await espnFetch(slot.sport,slot.league,"summary?event="+g.id,{});
-            const leaders  = parseLeaders(s);
-            const pitchers = slot.sport === "baseball" ? parsePitchers(s) : null;
+            const leaders   = parseLeaders(s);
+            const bbStats   = slot.sport === "baseball" ? parseBaseballStats(s) : null;
             setSlots(prev => {
               const next = prev.map(sl=>sl.key!==slot.key?sl:{...sl,games:sl.games.map(x=>x.id!==g.id?x:{
-                ...x, leaders, ...(pitchers ? { pitchers } : {}),
+                ...x, leaders, ...(bbStats ? { pitchers: bbStats.pitchers, hitters: bbStats.hitters } : {}),
               })});
               slotsRef.current=next; return next;
             });
