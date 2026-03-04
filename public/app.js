@@ -515,8 +515,7 @@ function DetailPanel({ game, sport, league, favs, onToggleFav, onClose }) {
           ),
           // Result badge if final
           game.status==="final" && (() => {
-            const pickWon = (pick.pick===game.home.abbr&&(game.home.score||0)>(game.away.score||0))
-                          ||(pick.pick===game.away.abbr&&(game.away.score||0)>(game.home.score||0));
+            const pickWon = pickCoveredSpread(pick, game);
             return e("div",{style:{
               padding:"3px 10px", borderRadius:6, fontWeight:900, fontSize:13,
               fontFamily:F, letterSpacing:1,
@@ -653,6 +652,29 @@ function pickSpreadLabel(pick) {
   // If the spread_holder matches the pick, use as-is; otherwise flip
   const val = holder === pick.pick_abbr || holder === pick.pick ? mkt : -mkt;
   return (val > 0 ? "+" : "") + val;
+}
+
+// Return numeric spread from the picked team's perspective (positive = underdog)
+function pickSpreadValue(pick) {
+  if (!pick || !pick.market || pick.market.spread == null) return null;
+  const mkt = pick.market.spread;
+  const holder = (pick.market.spread_holder || "").trim();
+  return holder === pick.pick_abbr || holder === pick.pick ? mkt : -mkt;
+}
+
+// Did the picked team cover the spread?
+// scoreDiff (pick team minus opponent) + spread-from-pick-perspective > 0
+// Falls back to outright winner if no spread data.
+function pickCoveredSpread(pick, game) {
+  if (!pick) return false;
+  const isHome = pick.pick === game.home.abbr;
+  const isAway = pick.pick === game.away.abbr;
+  if (!isHome && !isAway) return false;
+  const diff = isHome
+    ? (game.home.score||0) - (game.away.score||0)
+    : (game.away.score||0) - (game.home.score||0);
+  const sv = pickSpreadValue(pick);
+  return sv != null ? diff + sv > 0 : diff > 0;
 }
 
 function GameCard({ game, flash, rowH, favs, onTap }) {
@@ -818,8 +840,7 @@ function GameCard({ game, flash, rowH, favs, onTap }) {
           // Pick result indicator (after game ends)
           (() => {
             if (game.status==="final") {
-              const pickWon = (pick.pick===game.home.abbr&&(game.home.score||0)>(game.away.score||0))
-                            ||(pick.pick===game.away.abbr&&(game.away.score||0)>(game.home.score||0));
+              const pickWon = pickCoveredSpread(pick, game);
               return e("span",{style:{fontSize:Math.round(LEAD*0.22),flexShrink:0}}, pickWon?"✅":"❌");
             }
             return e("span",{style:{fontSize:Math.round(LEAD*0.18),flexShrink:0}},"🧠");
@@ -996,8 +1017,7 @@ function ScoreRow({ game, favs, onTap }) {
   // Pick result
   let pickResult = null;
   if (pick && isFinal) {
-    const won = (pick.pick===game.home.abbr && hw) || (pick.pick===game.away.abbr && aw);
-    pickResult = won ? "✅" : "❌";
+    pickResult = pickCoveredSpread(pick, game) ? "✅" : "❌";
   }
 
   const teamLine = (side) => {
