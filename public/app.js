@@ -658,8 +658,10 @@ function RankBadge({ rank, fontSize }) {
 function pickSpreadLabel(pick) {
   if (!pick || !pick.market || pick.market.spread == null) return null;
   const mkt = pick.market.spread;
-  const holder = (pick.market.spread_holder || "").trim();
-  // If the spread_holder matches the pick, use as-is; otherwise flip
+  // pick.pick_abbr identifies the spread-holder team in the same abbreviation
+  // format as pick.pick (confirmed by API design). Use it first, then fall back
+  // to pick.market.spread_holder which may use a different format (full names).
+  const holder = (pick.pick_abbr || pick.market.spread_holder || "").trim();
   const val = holder === pick.pick ? mkt : -mkt;
   return (val > 0 ? "+" : "") + val;
 }
@@ -668,7 +670,7 @@ function pickSpreadLabel(pick) {
 function pickSpreadValue(pick) {
   if (!pick || !pick.market || pick.market.spread == null) return null;
   const mkt = pick.market.spread;
-  const holder = (pick.market.spread_holder || "").trim();
+  const holder = (pick.pick_abbr || pick.market.spread_holder || "").trim();
   return holder === pick.pick ? mkt : -mkt;
 }
 
@@ -677,8 +679,14 @@ function pickSpreadValue(pick) {
 // Falls back to outright winner if no spread data.
 function pickCoveredSpread(pick, game) {
   if (!pick) return false;
-  const isHome = pick.pick === game.home.abbr;
-  const isAway = pick.pick === game.away.abbr;
+  // Primary: match pick.pick against ESPN game abbreviations.
+  // Fallback: match against pick's own home/away abbr fields (same API format as pick.pick).
+  let isHome = pick.pick === game.home.abbr;
+  let isAway = pick.pick === game.away.abbr;
+  if (!isHome && !isAway) {
+    if (pick.home_abbr) isHome = pick.pick === pick.home_abbr;
+    if (pick.away_abbr) isAway = pick.pick === pick.away_abbr;
+  }
   if (!isHome && !isAway) return false;
   const diff = isHome
     ? (game.home.score||0) - (game.away.score||0)
