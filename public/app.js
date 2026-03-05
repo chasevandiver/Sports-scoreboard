@@ -544,7 +544,7 @@ function DetailPanel({ game, sport, league, favs, onToggleFav, onClose }) {
         // Main pick row
         e("div",{style:{padding:"12px 14px",display:"flex",alignItems:"center",gap:16}},
           // Pick team logo
-          pick.pick===game.home.abbr
+          pick.pick_abbr===game.home.abbr
             ? (game.home.logo&&e("img",{src:game.home.logo,width:44,height:44,style:{objectFit:"contain",filter:"drop-shadow(0 1px 6px rgba(0,0,0,0.8))",flexShrink:0}}))
             : (game.away.logo&&e("img",{src:game.away.logo,width:44,height:44,style:{objectFit:"contain",filter:"drop-shadow(0 1px 6px rgba(0,0,0,0.8))",flexShrink:0}})),
 
@@ -652,26 +652,27 @@ function RankBadge({ rank, fontSize }) {
   return e("span",{style:{fontSize,fontWeight:900,fontFamily:F,color:"#F5C518",background:"rgba(245,197,24,0.12)",border:"1px solid rgba(245,197,24,0.45)",borderRadius:3,padding:"0 3px",lineHeight:"1.3",flexShrink:0,marginRight:2}},"#"+rank);
 }
 
-// Return the market spread string from the picked team's perspective
-// e.g. if market says "SIU +9.5" and pick is SIU → "+9.5"
-//      if market says "SIU +9.5" and pick is the other team → "-9.5"
+// Return the market spread string from the picked team's perspective.
+// pick.pick is the full team name; pick.pick_abbr is the abbreviation.
+// pick.market.spread_holder is the abbreviation of whichever team holds the spread.
+// e.g. if MINN +9.5 and pick is IU (not the holder) → "-9.5"
+//      if MINN +9.5 and pick is MINN (the holder)   → "+9.5"
 function pickSpreadLabel(pick) {
   if (!pick || !pick.market || pick.market.spread == null) return null;
   const mkt = pick.market.spread;
-  // pick.pick_abbr identifies the spread-holder team in the same abbreviation
-  // format as pick.pick (confirmed by API design). Use it first, then fall back
-  // to pick.market.spread_holder which may use a different format (full names).
-  const holder = (pick.pick_abbr || pick.market.spread_holder || "").trim();
-  const val = holder === pick.pick ? mkt : -mkt;
+  const pickAbbr = (pick.pick_abbr || "").trim();
+  const holder   = (pick.market.spread_holder || "").trim();
+  const val = pickAbbr && holder && pickAbbr === holder ? mkt : -mkt;
   return (val > 0 ? "+" : "") + val;
 }
 
-// Return numeric spread from the picked team's perspective (positive = underdog)
+// Return numeric spread from the picked team's perspective (positive = underdog).
 function pickSpreadValue(pick) {
   if (!pick || !pick.market || pick.market.spread == null) return null;
-  const mkt = pick.market.spread;
-  const holder = (pick.pick_abbr || pick.market.spread_holder || "").trim();
-  return holder === pick.pick ? mkt : -mkt;
+  const mkt      = pick.market.spread;
+  const pickAbbr = (pick.pick_abbr || "").trim();
+  const holder   = (pick.market.spread_holder || "").trim();
+  return pickAbbr && holder && pickAbbr === holder ? mkt : -mkt;
 }
 
 // Did the picked team cover the spread?
@@ -679,28 +680,11 @@ function pickSpreadValue(pick) {
 // Falls back to outright winner if no spread data.
 function pickCoveredSpread(pick, game) {
   if (!pick) return false;
-  // Primary: match pick.pick against ESPN game abbreviations.
-  // Fallback: match against pick's own home/away abbr fields (same API format as pick.pick).
-  let isHome = pick.pick === game.home.abbr;
-  let isAway = pick.pick === game.away.abbr;
-  if (!isHome && !isAway) {
-    if (pick.home_abbr) isHome = pick.pick === pick.home_abbr;
-    if (pick.away_abbr) isAway = pick.pick === pick.away_abbr;
-  }
-  if (!isHome && !isAway) {
-    // DEBUG: log the pick object so we can identify the format mismatch
-    console.warn("[CBB grade] team match failed", {
-      "pick.pick": pick.pick,
-      "pick.pick_abbr": pick.pick_abbr,
-      "pick.home_abbr": pick.home_abbr,
-      "pick.away_abbr": pick.away_abbr,
-      "game.home.abbr": game.home.abbr,
-      "game.away.abbr": game.away.abbr,
-      "pick.market": pick.market,
-      fullPick: pick,
-    });
-    return false;
-  }
+  // pick.pick_abbr is the abbreviation for the picked team (pick.pick is its full name).
+  const pickAbbr = (pick.pick_abbr || "").trim();
+  const isHome = pickAbbr === game.home.abbr;
+  const isAway = pickAbbr === game.away.abbr;
+  if (!isHome && !isAway) return false;
   const diff = isHome
     ? (game.home.score||0) - (game.away.score||0)
     : (game.away.score||0) - (game.home.score||0);
